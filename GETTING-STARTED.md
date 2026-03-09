@@ -21,7 +21,7 @@ You can use the root helper scripts instead of the longer workspace filter form:
 
 ```bash
 pnpm bootstrap
-pnpm doctor
+pnpm health
 pnpm tui openclaw/openclaw
 ```
 
@@ -52,10 +52,12 @@ If you use a classic PAT and need private repo access, `repo` is the safe fallba
 Check GitHub auth, OpenAI auth, and DB wiring:
 
 ```bash
-pnpm doctor
+pnpm health
 ```
 
 `doctor` also validates whether the GitHub token and OpenAI key look structurally correct before it runs the live smoke checks. If you configured `gitcrawl` for 1Password CLI but forgot to run through your `op` wrapper, `doctor` now tells you that too.
+
+From the repo root, use `pnpm health` or `pnpm run doctor`. Plain `pnpm doctor` runs pnpm’s own built-in doctor command.
 
 ### 1Password CLI option
 
@@ -70,7 +72,7 @@ Then use the wrapper init shows you, or run a command like this:
 env \
   GITHUB_TOKEN="$(op read 'op://PwrDrvr LLC/gitcrawl/GITHUB_TOKEN')" \
   OPENAI_API_KEY="$(op read 'op://PwrDrvr LLC/gitcrawl/OPENAI_API_KEY')" \
-  pnpm --filter @gitcrawl/cli cli doctor
+  pnpm health
 ```
 
 ## Sync `openclaw/openclaw`

@@ -13,12 +13,14 @@ Current status:
 ```bash
 pnpm install
 pnpm bootstrap
-pnpm doctor
+pnpm health
 ```
 
 For a full first-run walkthrough against `openclaw/openclaw`, see [GETTING-STARTED.md](/Users/huntharo/github/gitcrawl/GETTING-STARTED.md).
 
 `pnpm bootstrap` runs the interactive setup wizard the first time. It can either save plaintext keys in `~/.config/gitcrawl/config.json` or guide you through a 1Password CLI (`op`) setup that keeps keys out of the config file. You do not need a repo-local `.env.local` file for normal use.
+
+Use `pnpm health` for the root-level doctor helper. `pnpm doctor` is a built-in pnpm command and does not run gitcrawl.
 
 ## Root Helpers
 
@@ -30,6 +32,7 @@ pnpm sync openclaw/openclaw --since 7d
 pnpm embed openclaw/openclaw
 pnpm cluster openclaw/openclaw
 pnpm search openclaw/openclaw --query "download stalls"
+pnpm health
 pnpm serve
 ```
 
@@ -81,7 +84,7 @@ First-run setup:
 
 ```bash
 pnpm bootstrap
-pnpm doctor
+pnpm health
 ```
 
 `init` / `bootstrap` behavior:
@@ -97,6 +100,7 @@ pnpm doctor
 - init also prints a ready-to-paste `~/.zshrc` wrapper function and an example `op read` command
 - re-running `pnpm bootstrap` is idempotent once both keys are already stored
 - use `pnpm bootstrap -- --reconfigure` or `gitcrawl init --reconfigure` if you want to replace stored keys
+- use `pnpm health` or `pnpm run doctor` from the repo root; plain `pnpm doctor` runs pnpm’s own doctor command instead
 
 GitHub token guidance:
 
@@ -114,6 +118,13 @@ GitHub token guidance:
 - GitHub token presence, token-shape validation, and a live auth smoke check
 - OpenAI key presence, key-shape validation, and a live auth smoke check
 - if init is configured for 1Password CLI but you forgot to run through your `op` wrapper, doctor tells you that explicitly
+
+If you use the `gitcrawl-op` shell wrapper from init, the lazy path becomes:
+
+```bash
+gitcrawl-op doctor
+gitcrawl-op tui
+```
 
 Environment overrides are still supported and take precedence over the saved config:
 
