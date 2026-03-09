@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 
 import { createApiServer, GitcrawlService } from '@gitcrawl/api-core';
 
-type CommandName = 'init' | 'doctor' | 'sync' | 'summarize' | 'embed' | 'cluster' | 'search' | 'serve';
+type CommandName = 'init' | 'doctor' | 'sync' | 'summarize' | 'embed' | 'cluster' | 'search' | 'neighbors' | 'serve';
 
 function usage(): string {
   return `gitcrawl <command> [options]
@@ -12,11 +12,12 @@ function usage(): string {
 Commands:
   init
   doctor
-  sync <owner/repo> [--since <iso>] [--limit <count>] [--include-comments]
+  sync <owner/repo> [--since <iso|duration>] [--limit <count>] [--include-comments]
   summarize <owner/repo> [--number <thread>]
   embed <owner/repo> [--number <thread>]
   cluster <owner/repo> [--k <count>] [--threshold <score>]
   search <owner/repo> --query <text> [--mode keyword|semantic|hybrid]
+  neighbors <owner/repo> --number <thread> [--limit <count>] [--threshold <score>]
   serve
 `;
 }
@@ -68,6 +69,51 @@ export function parseRepoFlags(args: string[]): { owner: string; repo: string; v
   throw new Error('Use --repo owner/repo or provide owner/repo as the first positional argument');
 }
 
+export function resolveSinceValue(value: string, now: Date = new Date()): string {
+  const trimmed = value.trim();
+  const absolute = new Date(trimmed);
+  if (!Number.isNaN(absolute.getTime())) {
+    return absolute.toISOString();
+  }
+
+  const match = trimmed.match(/^(\d+)(s|m|h|d|w|mo|y)$/i);
+  if (!match) {
+    throw new Error(`Invalid --since value: ${value}. Use an ISO timestamp or duration like 15m, 2h, 7d, or 1mo.`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const resolved = new Date(now);
+
+  switch (unit) {
+    case 's':
+      resolved.setTime(resolved.getTime() - amount * 1000);
+      break;
+    case 'm':
+      resolved.setTime(resolved.getTime() - amount * 60 * 1000);
+      break;
+    case 'h':
+      resolved.setTime(resolved.getTime() - amount * 60 * 60 * 1000);
+      break;
+    case 'd':
+      resolved.setTime(resolved.getTime() - amount * 24 * 60 * 60 * 1000);
+      break;
+    case 'w':
+      resolved.setTime(resolved.getTime() - amount * 7 * 24 * 60 * 60 * 1000);
+      break;
+    case 'mo':
+      resolved.setUTCMonth(resolved.getUTCMonth() - amount);
+      break;
+    case 'y':
+      resolved.setUTCFullYear(resolved.getUTCFullYear() - amount);
+      break;
+    default:
+      throw new Error(`Unsupported --since unit: ${unit}`);
+  }
+
+  return resolved.toISOString();
+}
+
 export async function run(argv: string[], stdout: NodeJS.WritableStream = process.stdout): Promise<void> {
   const [commandRaw, ...rest] = argv;
   const command = commandRaw as CommandName | undefined;
@@ -92,7 +138,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
         const result = await service.syncRepository({
           owner,
           repo,
-          since: typeof values.since === 'string' ? values.since : undefined,
+          since: typeof values.since === 'string' ? resolveSinceValue(values.since) : undefined,
           limit: typeof values.limit === 'string' ? Number(values.limit) : undefined,
           includeComments: values['include-comments'] === true,
           onProgress: (message) => {
@@ -108,6 +154,9 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           owner,
           repo,
           threadNumber: typeof values.number === 'string' ? Number(values.number) : undefined,
+          onProgress: (message) => {
+            process.stderr.write(`${message}\n`);
+          },
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -118,6 +167,9 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           owner,
           repo,
           threadNumber: typeof values.number === 'string' ? Number(values.number) : undefined,
+          onProgress: (message) => {
+            process.stderr.write(`${message}\n`);
+          },
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -129,6 +181,9 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           repo,
           k: typeof values.k === 'string' ? Number(values.k) : undefined,
           minScore: typeof values.threshold === 'string' ? Number(values.threshold) : undefined,
+          onProgress: (message) => {
+            process.stderr.write(`${message}\n`);
+          },
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -147,6 +202,21 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           repo,
           query: values.query,
           mode,
+        });
+        stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+      case 'neighbors': {
+        const { owner, repo, values } = parseRepoFlags(rest);
+        if (typeof values.number !== 'string') {
+          throw new Error('Missing --number');
+        }
+        const result = service.listNeighbors({
+          owner,
+          repo,
+          threadNumber: Number(values.number),
+          limit: typeof values.limit === 'string' ? Number(values.limit) : undefined,
+          minScore: typeof values.threshold === 'string' ? Number(values.threshold) : undefined,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;

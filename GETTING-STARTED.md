@@ -49,7 +49,7 @@ pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --include-comments
 Smaller first pass for recent changes only:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --since 2026-03-01T00:00:00Z
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --since 7d
 ```
 
 Smallest smoke-test path:
@@ -69,6 +69,7 @@ Notes:
 - `sync` only ingests open issues and PRs.
 - `sync` is metadata-only by default, so it skips issue comments, PR reviews, and review comments unless you opt in.
 - use `--include-comments` only when you want the extra discussion context badly enough to spend the extra GitHub API budget
+- `--since` accepts ISO timestamps and relative durations like `15m`, `2h`, `7d`, and `1mo`
 - `--limit` and `--since` are filtered crawls, so they do not mark older locally-open items as closed
 - On a large repository, the full sync can take a while.
 - Starting with `--since` is the safer first run.
@@ -94,6 +95,17 @@ Build similarity clusters:
 ```bash
 pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
 ```
+
+Inspect exact nearest neighbors for one embedded thread:
+
+```bash
+pnpm --filter @gitcrawl/cli cli neighbors openclaw/openclaw --number 42 --limit 10
+```
+
+Notes:
+
+- `summarize`, `embed`, and `cluster` print progress to stderr during long runs
+- `neighbors` only works after `embed` has populated dedupe-summary embeddings
 
 ## Search
 
@@ -132,6 +144,7 @@ Useful endpoints:
 - [http://127.0.0.1:5179/health](http://127.0.0.1:5179/health)
 - [http://127.0.0.1:5179/repositories](http://127.0.0.1:5179/repositories)
 - [http://127.0.0.1:5179/threads?owner=openclaw&repo=openclaw](http://127.0.0.1:5179/threads?owner=openclaw&repo=openclaw)
+- [http://127.0.0.1:5179/neighbors?owner=openclaw&repo=openclaw&number=42&limit=10](http://127.0.0.1:5179/neighbors?owner=openclaw&repo=openclaw&number=42&limit=10)
 - [http://127.0.0.1:5179/clusters?owner=openclaw&repo=openclaw](http://127.0.0.1:5179/clusters?owner=openclaw&repo=openclaw)
 - [http://127.0.0.1:5179/search?owner=openclaw&repo=openclaw&query=download%20stalls&mode=hybrid](http://127.0.0.1:5179/search?owner=openclaw&repo=openclaw&query=download%20stalls&mode=hybrid)
 

@@ -28,6 +28,7 @@ pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --include-comments --limi
 pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli embed openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli neighbors openclaw/openclaw --number 42 --limit 10
 pnpm --filter @gitcrawl/cli cli search openclaw/openclaw --query "download stalls"
 pnpm --filter @gitcrawl/cli cli serve
 ```
@@ -59,7 +60,10 @@ Supported variables:
 - `sync` only pulls open issues and PRs now.
 - `sync` is metadata-only by default. It pulls titles, bodies, labels, assignees, state, and timestamps without fetching comment bodies.
 - `sync --include-comments` enables issue comments, PR reviews, and review comments for deeper per-thread context.
-- `sync --limit <count>` and `sync --since <iso>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.
+- `sync --since` accepts either an ISO timestamp or a relative duration like `15m`, `2h`, `7d`, or `1mo`.
+- `sync --limit <count>` and `sync --since <iso|duration>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.
 - `sync --limit <count>` is the best smoke-test path on a busy repository.
+- `summarize`, `embed`, and `cluster` now print progress to stderr during long runs.
+- `neighbors` shows exact local nearest neighbors for one embedded thread and is useful for inspecting vector quality before clustering.
 - sync now pauses between 100-thread batches and uses stronger rate-limit backoff, but a long crawl can still hit GitHub limits.
 - For a first pass on a large repository, prefer `sync --since <iso-timestamp>` before doing a full backfill.

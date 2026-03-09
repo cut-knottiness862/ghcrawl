@@ -1,0 +1,94 @@
+# GitCrawl Agent Notes
+
+## Purpose
+
+This repository is a local-first GitHub issue and PR crawler for maintainers.
+
+Current priorities:
+
+- reliable local sync from GitHub
+- OpenAI-backed summarization and embeddings
+- exact local vector similarity and clustering
+- a future local web UI, but not yet
+
+## Stack And Tools
+
+- package manager: `pnpm`
+- language/runtime: Node.js + TypeScript
+- workspace layout:
+  - `packages/api-core`
+  - `packages/api-contract`
+  - `apps/cli`
+  - `apps/web` placeholder only
+- database: SQLite
+- GitHub API: Octokit
+- OpenAI API: official `openai` Node SDK
+- vector search: exact cosine similarity in-process
+- optional future ANN backend: OpenSearch, deferred
+
+## Important Current Behavior
+
+- CLI is the main runtime host in V1.
+- The local HTTP API is hosted in-process by the CLI.
+- `sync` is open-only.
+- `sync` is metadata-only by default.
+- `sync --include-comments` is opt-in deeper hydration.
+- filtered crawls like `--limit` and `--since` do not reconcile stale open items
+- `--since` accepts ISO timestamps and relative durations like `15m`, `2h`, `7d`, and `1mo`
+
+## Where To Read First
+
+- product/design: [DESIGN.md](/Users/huntharo/github/gitcrawl/DESIGN.md)
+- implementation status and next phases: [PLAN.md](/Users/huntharo/github/gitcrawl/PLAN.md)
+- operator overview: [README.md](/Users/huntharo/github/gitcrawl/README.md)
+- local usage walkthrough: [GETTING-STARTED.md](/Users/huntharo/github/gitcrawl/GETTING-STARTED.md)
+
+## Code Areas
+
+- CLI entrypoint: [apps/cli/src/main.ts](/Users/huntharo/github/gitcrawl/apps/cli/src/main.ts)
+- core service orchestration: [packages/api-core/src/service.ts](/Users/huntharo/github/gitcrawl/packages/api-core/src/service.ts)
+- local HTTP API: [packages/api-core/src/api/server.ts](/Users/huntharo/github/gitcrawl/packages/api-core/src/api/server.ts)
+- shared schemas/contracts: [packages/api-contract/src/contracts.ts](/Users/huntharo/github/gitcrawl/packages/api-contract/src/contracts.ts)
+- GitHub client: [packages/api-core/src/github/client.ts](/Users/huntharo/github/gitcrawl/packages/api-core/src/github/client.ts)
+- OpenAI provider: [packages/api-core/src/openai/provider.ts](/Users/huntharo/github/gitcrawl/packages/api-core/src/openai/provider.ts)
+- SQLite migration/schema: [packages/api-core/src/db/migrate.ts](/Users/huntharo/github/gitcrawl/packages/api-core/src/db/migrate.ts)
+
+## Working Rules
+
+- Keep changes aligned with the current plan unless the user explicitly changes direction.
+- Prefer small, logically isolated changes.
+- If you make a logical change, commit it before starting the next logical change.
+- Do not leave multiple unrelated or semi-related logical changes uncommitted in the working tree.
+- Use conventional commit messages so changes are easy to revert later.
+
+Examples:
+
+- `feat: add neighbors endpoint`
+- `fix: respect GitHub rate-limit reset time`
+- `docs: update getting started sync examples`
+- `refactor: split comment hydration from default sync`
+- `test: cover filtered sync reconciliation rules`
+
+## Verification Expectations
+
+Run the smallest relevant verification before committing.
+
+Common commands:
+
+- `pnpm typecheck`
+- `pnpm test`
+- targeted CLI smoke tests via:
+  - `pnpm --filter @gitcrawl/cli cli doctor`
+  - `pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --limit 1`
+
+If a change affects OpenAI-backed paths, avoid unnecessary live spend unless the user wants a real run.
+
+## Editing Guidance
+
+- Keep package boundaries intact:
+  - `apps/web` must not depend on `api-core`
+  - browser code must not access SQLite, GitHub, or OpenAI directly
+- Prefer metadata-first sync unless there is a strong reason to hydrate comments.
+- Do not add OpenSearch as a default dependency path.
+- Preserve operator-facing progress output for long-running commands.
+

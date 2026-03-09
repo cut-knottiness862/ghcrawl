@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseOwnerRepo, parseRepoFlags, run } from './main.js';
+import { parseOwnerRepo, parseRepoFlags, resolveSinceValue, run } from './main.js';
 
 test('run prints usage with no command', async () => {
   let output = '';
@@ -39,4 +39,22 @@ test('parseRepoFlags accepts include-comments boolean flag', () => {
   assert.equal(parsed.owner, 'openclaw');
   assert.equal(parsed.repo, 'openclaw');
   assert.equal(parsed.values['include-comments'], true);
+});
+
+test('resolveSinceValue keeps ISO timestamps', () => {
+  assert.equal(resolveSinceValue('2026-03-01T00:00:00Z'), '2026-03-01T00:00:00.000Z');
+});
+
+test('resolveSinceValue parses minute duration shorthand', () => {
+  const now = new Date('2026-03-09T12:00:00Z');
+  assert.equal(resolveSinceValue('15m', now), '2026-03-09T11:45:00.000Z');
+});
+
+test('resolveSinceValue parses month duration shorthand', () => {
+  const now = new Date('2026-03-09T12:00:00Z');
+  assert.equal(resolveSinceValue('1mo', now), '2026-02-09T12:00:00.000Z');
+});
+
+test('resolveSinceValue rejects unsupported syntax', () => {
+  assert.throws(() => resolveSinceValue('yesterday'), /Invalid --since value/);
 });
