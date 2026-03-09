@@ -59,6 +59,33 @@ export function createApiServer(service: GitcrawlService): http.Server {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/neighbors') {
+        const params = parseRepoParams(url);
+        const numberValue = url.searchParams.get('number');
+        if (!numberValue) {
+          sendJson(res, 400, { error: 'Missing number parameter' });
+          return;
+        }
+        const threadNumber = Number(numberValue);
+        if (!Number.isInteger(threadNumber) || threadNumber <= 0) {
+          sendJson(res, 400, { error: 'Invalid number parameter' });
+          return;
+        }
+        const limitValue = url.searchParams.get('limit');
+        const minScoreValue = url.searchParams.get('minScore');
+        sendJson(
+          res,
+          200,
+          service.listNeighbors({
+            ...params,
+            threadNumber,
+            limit: limitValue ? Number(limitValue) : undefined,
+            minScore: minScoreValue ? Number(minScoreValue) : undefined,
+          }),
+        );
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/clusters') {
         const params = parseRepoParams(url);
         sendJson(res, 200, service.listClusters(params));

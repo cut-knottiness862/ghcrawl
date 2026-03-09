@@ -79,6 +79,13 @@ export const searchResponseSchema = z.object({
 });
 export type SearchResponse = z.infer<typeof searchResponseSchema>;
 
+export const neighborsResponseSchema = z.object({
+  repository: repositorySchema,
+  thread: threadSchema,
+  neighbors: z.array(neighborSchema),
+});
+export type NeighborsResponse = z.infer<typeof neighborsResponseSchema>;
+
 export const clusterMemberSchema = z.object({
   threadId: z.number().int().positive(),
   number: z.number().int().positive(),
