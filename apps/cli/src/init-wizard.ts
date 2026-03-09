@@ -29,6 +29,14 @@ export type InitPrompter = {
   cancel: (message: string) => void;
 };
 
+function resolveTextValue(value: string | symbol, fallback: string): string | symbol {
+  if (isCancel(value)) {
+    return value;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
 export function createClackInitPrompter(): InitPrompter {
   return {
     intro,
@@ -202,20 +210,22 @@ export async function runInitWizard(
     nextConfig.opVaultName = undefined;
     nextConfig.opItemName = undefined;
   } else {
-    const vaultName = await prompter.text({
+    const defaultVaultName = stored.data.opVaultName ?? 'Private';
+    const vaultNameInput = await prompter.text({
       message: '1Password vault name',
-      placeholder: stored.data.opVaultName ?? 'Private',
-      validate: (value) => (value.trim().length > 0 ? undefined : 'Enter the 1Password vault name'),
+      placeholder: defaultVaultName,
     });
+    const vaultName = resolveTextValue(vaultNameInput, defaultVaultName);
     if (isCancel(vaultName)) {
       prompter.cancel('init cancelled');
       throw new Error('init cancelled');
     }
-    const itemName = await prompter.text({
+    const defaultItemName = stored.data.opItemName ?? 'gitcrawl';
+    const itemNameInput = await prompter.text({
       message: '1Password item name',
-      placeholder: stored.data.opItemName ?? 'gitcrawl',
-      validate: (value) => (value.trim().length > 0 ? undefined : 'Enter the 1Password item name'),
+      placeholder: defaultItemName,
     });
+    const itemName = resolveTextValue(itemNameInput, defaultItemName);
     if (isCancel(itemName)) {
       prompter.cancel('init cancelled');
       throw new Error('init cancelled');
@@ -245,6 +255,15 @@ export async function runInitWizard(
       ].join('\n'),
       '1Password Setup',
     );
+    const readyNote = await prompter.confirm({
+      message: 'I created the Secure Note with those exact field names and secret refs.',
+      initialValue: true,
+    });
+    if (isCancel(readyNote) || readyNote !== true) {
+      prompter.cancel('init cancelled');
+      throw new Error('init cancelled');
+    }
+
     await prompter.note(
       [
         'After saving that Secure Note, run gitcrawl through an op-backed shell helper:',
@@ -258,15 +277,15 @@ export async function runInitWizard(
         'Examples:',
         '- gitcrawl-op doctor',
         '- gitcrawl-op tui',
-        '- gitcrawl-op sync openclaw/openclaw',
+        '- gitcrawl-op sync org/repo',
       ].join('\n'),
       'Next Commands',
     );
-    const ready = await prompter.confirm({
-      message: 'I created the Secure Note and I am ready to save this gitcrawl config.',
+    const readyCommands = await prompter.confirm({
+      message: 'I copied those commands and I am ready to save this gitcrawl config.',
       initialValue: true,
     });
-    if (isCancel(ready) || ready !== true) {
+    if (isCancel(readyCommands) || readyCommands !== true) {
       prompter.cancel('init cancelled');
       throw new Error('init cancelled');
     }

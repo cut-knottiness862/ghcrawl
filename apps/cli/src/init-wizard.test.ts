@@ -131,5 +131,26 @@ test('runInitWizard can configure 1Password CLI metadata without persisting plai
   );
   assert.equal(notes.some((entry) => entry.title === 'Next Commands' && entry.message.includes('gitcrawl-op()')), true);
   assert.equal(notes.some((entry) => entry.title === 'Next Commands' && entry.message.includes('gitcrawl-op doctor')), true);
+  assert.equal(notes.some((entry) => entry.title === 'Next Commands' && entry.message.includes('gitcrawl-op sync org/repo')), true);
   assert.equal(confirms.some((message) => message.includes('I created the Secure Note')), true);
+  assert.equal(confirms.some((message) => message.includes('I copied those commands')), true);
+});
+
+test('runInitWizard accepts empty 1Password vault and item input as defaults', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-init-test-'));
+  const env = { ...process.env, HOME: home };
+
+  await runInitWizard({
+    env,
+    prompter: makePrompter({
+      select: async () => 'op',
+      text: async () => '',
+      confirm: async () => true,
+    }),
+    isInteractive: true,
+  });
+
+  const persisted = readPersistedConfig({ env });
+  assert.equal(persisted.data.opVaultName, 'Private');
+  assert.equal(persisted.data.opItemName, 'gitcrawl');
 });
