@@ -72,6 +72,8 @@ type EmbeddingTask = {
   sourceKind: EmbeddingSourceKind;
   text: string;
   contentHash: string;
+  estimatedTokens: number;
+  wasTruncated: boolean;
 };
 
 type StoredEmbeddingRow = ThreadRow & {
@@ -100,6 +102,10 @@ type NeighborsResultInternal = NeighborsResponse;
 
 const SYNC_BATCH_SIZE = 100;
 const SYNC_BATCH_DELAY_MS = 5000;
+const EMBED_ESTIMATED_CHARS_PER_TOKEN = 2;
+const EMBED_MAX_ITEM_TOKENS = 6000;
+const EMBED_MAX_BATCH_TOKENS = 6000;
+const EMBED_TRUNCATION_MARKER = '\n\n[truncated for embedding]';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -546,16 +552,17 @@ export class GitcrawlService {
       }
       const pending = tasks.filter((task) => existing.get(`${task.threadId}:${task.sourceKind}`) !== task.contentHash);
       const skipped = tasks.length - pending.length;
+      const truncated = tasks.filter((task) => task.wasTruncated).length;
 
       params.onProgress?.(
         `[embed] loaded ${rows.length} open thread(s) and ${tasks.length} embedding source(s) for ${repository.fullName}`,
       );
       params.onProgress?.(
-        `[embed] pending=${pending.length} skipped=${skipped} model=${this.config.embedModel} batch_size=${this.config.embedBatchSize} concurrency=${this.config.embedConcurrency} max_unread=${this.config.embedMaxUnread}`,
+        `[embed] pending=${pending.length} skipped=${skipped} truncated=${truncated} model=${this.config.embedModel} batch_size=${this.config.embedBatchSize} concurrency=${this.config.embedConcurrency} max_unread=${this.config.embedMaxUnread} max_batch_tokens=${EMBED_MAX_BATCH_TOKENS}`,
       );
 
       let embedded = 0;
-      const batches = this.chunkArray(pending, this.config.embedBatchSize);
+      const batches = this.chunkEmbeddingTasks(pending, this.config.embedBatchSize, EMBED_MAX_BATCH_TOKENS);
       const mapper = new IterableMapper(
         batches,
         async (batch: EmbeddingTask[]) => {
@@ -575,8 +582,9 @@ export class GitcrawlService {
       for await (const batchResult of mapper) {
         completedBatches += 1;
         const numbers = batchResult.map(({ task }) => `#${task.threadNumber}:${task.sourceKind}`);
+        const estimatedTokens = batchResult.reduce((sum, { task }) => sum + task.estimatedTokens, 0);
         params.onProgress?.(
-          `[embed] batch ${completedBatches}/${Math.max(batches.length, 1)} size=${batchResult.length} items=${numbers.join(',')}`,
+          `[embed] batch ${completedBatches}/${Math.max(batches.length, 1)} size=${batchResult.length} est_tokens=${estimatedTokens} items=${numbers.join(',')}`,
         );
         for (const { task, embedding } of batchResult) {
           this.upsertEmbedding(task.threadId, task.sourceKind, task.contentHash, embedding);
@@ -1310,46 +1318,92 @@ export class GitcrawlService {
     dedupeSummary: string | null;
   }): EmbeddingTask[] {
     const tasks: EmbeddingTask[] = [];
-    const titleText = normalizeSummaryText(params.title);
+    const titleText = this.prepareEmbeddingText(normalizeSummaryText(params.title), EMBED_MAX_ITEM_TOKENS);
     if (titleText) {
       tasks.push({
         threadId: params.threadId,
         threadNumber: params.threadNumber,
         sourceKind: 'title',
-        text: titleText,
-        contentHash: stableContentHash(`embedding:title\n${titleText}`),
+        text: titleText.text,
+        contentHash: stableContentHash(`embedding:title\n${titleText.text}`),
+        estimatedTokens: titleText.estimatedTokens,
+        wasTruncated: titleText.wasTruncated,
       });
     }
 
-    const bodyText = normalizeSummaryText(params.body ?? '');
+    const bodyText = this.prepareEmbeddingText(normalizeSummaryText(params.body ?? ''), EMBED_MAX_ITEM_TOKENS);
     if (bodyText) {
       tasks.push({
         threadId: params.threadId,
         threadNumber: params.threadNumber,
         sourceKind: 'body',
-        text: bodyText,
-        contentHash: stableContentHash(`embedding:body\n${bodyText}`),
+        text: bodyText.text,
+        contentHash: stableContentHash(`embedding:body\n${bodyText.text}`),
+        estimatedTokens: bodyText.estimatedTokens,
+        wasTruncated: bodyText.wasTruncated,
       });
     }
 
-    const summaryText = normalizeSummaryText(params.dedupeSummary ?? '');
+    const summaryText = this.prepareEmbeddingText(normalizeSummaryText(params.dedupeSummary ?? ''), EMBED_MAX_ITEM_TOKENS);
     if (summaryText) {
       tasks.push({
         threadId: params.threadId,
         threadNumber: params.threadNumber,
         sourceKind: 'dedupe_summary',
-        text: summaryText,
-        contentHash: stableContentHash(`embedding:dedupe_summary\n${summaryText}`),
+        text: summaryText.text,
+        contentHash: stableContentHash(`embedding:dedupe_summary\n${summaryText.text}`),
+        estimatedTokens: summaryText.estimatedTokens,
+        wasTruncated: summaryText.wasTruncated,
       });
     }
 
     return tasks;
   }
 
-  private chunkArray<T>(items: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let index = 0; index < items.length; index += size) {
-      chunks.push(items.slice(index, index + size));
+  private prepareEmbeddingText(
+    text: string,
+    maxEstimatedTokens: number,
+  ): { text: string; estimatedTokens: number; wasTruncated: boolean } | null {
+    if (!text) {
+      return null;
+    }
+
+    const maxChars = maxEstimatedTokens * EMBED_ESTIMATED_CHARS_PER_TOKEN;
+    const wasTruncated = text.length > maxChars;
+    const prepared = wasTruncated
+      ? `${text.slice(0, Math.max(0, maxChars - EMBED_TRUNCATION_MARKER.length)).trimEnd()}${EMBED_TRUNCATION_MARKER}`
+      : text;
+    return {
+      text: prepared,
+      estimatedTokens: this.estimateEmbeddingTokens(prepared),
+      wasTruncated,
+    };
+  }
+
+  private estimateEmbeddingTokens(text: string): number {
+    return Math.max(1, Math.ceil(text.length / EMBED_ESTIMATED_CHARS_PER_TOKEN));
+  }
+
+  private chunkEmbeddingTasks(items: EmbeddingTask[], maxItems: number, maxEstimatedTokens: number): EmbeddingTask[][] {
+    const chunks: EmbeddingTask[][] = [];
+    let current: EmbeddingTask[] = [];
+    let currentEstimatedTokens = 0;
+
+    for (const item of items) {
+      const wouldExceedItemCount = current.length >= maxItems;
+      const wouldExceedTokenBudget = current.length > 0 && currentEstimatedTokens + item.estimatedTokens > maxEstimatedTokens;
+      if (wouldExceedItemCount || wouldExceedTokenBudget) {
+        chunks.push(current);
+        current = [];
+        currentEstimatedTokens = 0;
+      }
+
+      current.push(item);
+      currentEstimatedTokens += item.estimatedTokens;
+    }
+
+    if (current.length > 0) {
+      chunks.push(current);
     }
     return chunks;
   }

@@ -71,6 +71,7 @@ Supported variables:
 - `embed` now defaults to `text-embedding-3-large`.
 - `embed` generates separate vectors for `title` and `body`, and also a summary-derived vector when summary fields exist.
 - `embed` stores an input hash per source kind and will not resubmit unchanged text for re-embedding.
+- `embed` now truncates oversized source text before submission and splits requests on a conservative token budget to avoid OpenAI context-limit failures.
 - semantic search, neighbors, and clustering now aggregate across the stored embedding sources instead of relying only on summary vectors.
 - `sync --since` accepts either an ISO timestamp or a relative duration like `15m`, `2h`, `7d`, or `1mo`.
 - `sync --limit <count>` and `sync --since <iso|duration>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.

@@ -125,6 +125,7 @@ Notes:
 - `embed` defaults to `text-embedding-3-large`
 - `embed` creates separate vectors for `title` and `body`, plus a summary-derived vector when summaries exist
 - unchanged embedding inputs are skipped by stored hash, so reruns do not resubmit identical text
+- oversized embedding inputs are truncated locally and requests are split by a conservative token budget before submission
 - the embedding worker defaults are `batch_size=8`, `concurrency=10`, and `max_unread=20`; override them with `GITCRAWL_EMBED_BATCH_SIZE`, `GITCRAWL_EMBED_CONCURRENCY`, and `GITCRAWL_EMBED_MAX_UNREAD` if needed
 - `neighbors` only works after `embed` has populated at least one embedding source for the repo
 
