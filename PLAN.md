@@ -1,28 +1,25 @@
 # GitCrawl Plan
 
-## Goals
+## Summary Of Goals And Facts
 
 - Build a local-first GitHub issue and PR crawler inspired by `discrawl`.
-- Reuse `jeerreview` patterns for GitHub auth, OpenAI auth, local API, and React UI.
-- Support local summarization, embeddings, semantic search, and clustering.
+- Reuse `jeerreview` patterns for env loading, local API shape, and future local UI shape.
+- Reuse `dupcanon` selectively for auditable runs, similarity edges, and deterministic clustering.
 - Keep the tool project-agnostic and runnable locally by maintainers.
-
-## Facts And Constraints
-
-- `discrawl` is the main reference for product shape and CLI ergonomics.
-- `jeerreview` is the main reference for TypeScript app structure and `.env.local` usage.
-- `dupcanon` is an architectural reference for persisted run history, auditable similarity edges, and deterministic clustering.
-- `jeerreview` already uses the env names we want:
-  - `GITHUB_TOKEN`
-  - `OPENAI_API_KEY`
-  - `JEERREVIEW_LLM_MODEL`
-- Current expected local corpus is only a few thousand issues/PRs, so exact similarity is viable at first.
-- We should summarize first, then embed the summaries.
-- Bot review comments should be skipped from the dedupe-oriented document text.
-- OpenSearch 3.3 is optional for V1 and should not block initial usefulness.
-- Exact local cosine similarity is the active kNN plan for now; OpenSearch is deferred until we have real performance evidence that we need it.
-- This repo uses a `pnpm` monorepo with `packages/api-core`, `packages/api-contract`, `apps/cli`, and a deferred `apps/web`.
-- CLI is the only supported execution host in V1. Web is deferred and must stay HTTP-only against the local API boundary.
+- Use a `pnpm` monorepo with:
+  - `packages/api-core`
+  - `packages/api-contract`
+  - `apps/cli`
+  - `apps/web` as a deferred placeholder
+- CLI is the only supported runtime host in V1.
+- Web is deferred and must stay HTTP-only against the local API boundary.
+- SQLite is the canonical store.
+- Exact local cosine similarity is the active kNN plan.
+- OpenSearch is explicitly deferred until local exact search proves insufficient.
+- Sync is open-only.
+- Sync is metadata-only by default.
+- `sync --include-comments` is optional deeper hydration, not the default path.
+- Filtered crawls like `--limit` and `--since` do not perform stale-open reconciliation.
 
 ## Phase 0: Bootstrap
 
@@ -46,35 +43,48 @@
 
 ## Phase 2: SQLite Schema And GitHub Sync
 
-- [x] Define the SQLite schema for repositories, issues, PRs, comments, reviews, review comments, documents, summaries, embeddings, edges, clusters, and runs.
+- [x] Define the SQLite schema for repositories, threads, comments, documents, summaries, embeddings, edges, clusters, and runs.
 - [x] Add migrations and migration tests.
-- [x] Implement GitHub client using the `jeerreview` header/auth pattern.
-- [x] Implement repository sync for issues and PRs.
-- [x] Implement comment, review, and review-comment ingestion.
-- [ ] Implement checkpointed incremental sync.
-- [ ] Implement retry and rate limit handling.
-- [ ] Add CLI commands for `sync --full` and `sync --since`.
-- [ ] Testing goal: fixture-backed integration tests prove idempotent sync and resume behavior.
+- [x] Switch GitHub access to Octokit with retry, pagination, and throttling hooks.
+- [x] Implement repository sync for open issues and PRs.
+- [x] Track `first_pulled_at` and `last_pulled_at` for local thread state.
+- [x] Preserve thread kind correctly as `issue` or `pull_request`.
+- [x] Reconcile stale locally-open threads on full unfiltered crawls and mark them closed when GitHub confirms closure.
+- [x] Add rate-limit backoff logging that tells the operator how long GitHub told us to wait.
+- [x] Add positional `owner/repo` CLI syntax.
+- [x] Add filtered crawls with `--since` and `--limit`.
+- [x] Make comment, review, and review-comment hydration opt-in with `--include-comments`.
+- [ ] Implement durable incremental checkpoints/cursors instead of relying only on `--since`.
+- [ ] Decide whether to persist GitHub ETags or GraphQL cursors for cheaper refreshes.
+- [ ] Add a dedicated `refresh-closed` or equivalent command if full open reconciliation becomes too slow on large repos.
+- [ ] Testing goal: add fixture-backed sync tests for idempotency, repeated refreshes, and partial-failure resume behavior.
 
 ## Phase 3: Document Building And Summaries
 
-- [ ] Define the canonical thread document shape for issues and PRs.
-- [ ] Implement bot-author filtering and routine automation filtering.
-- [ ] Build normalized dedupe documents from title, body, comments, reviews, and selected metadata.
-- [ ] Implement summary generation jobs with OpenAI.
-- [ ] Persist multiple summary facets, including `dedupe_summary`.
-- [ ] Add rerun logic for stale or missing summaries.
-- [ ] Testing goal: golden tests prove the document builder excludes bot review noise and preserves important human context.
+- [x] Define the canonical thread document shape for issues and PRs.
+- [x] Implement bot-author filtering and routine automation filtering for dedupe text.
+- [x] Build normalized dedupe documents from title, body, selected metadata, and any hydrated human comments.
+- [x] Implement summary generation jobs with OpenAI.
+- [x] Persist multiple summary facets, including `dedupe_summary`.
+- [x] Add rerun logic for stale or missing summaries based on content hash.
+- [ ] Refine the canonical document now that sync is metadata-first by default.
+- [ ] Decide which optional comment sources are worth hydrating for similarity quality:
+  - maintainer comments only
+  - non-bot comments only
+  - top-N recent human comments only
+- [ ] Add better bot/noise filtering for repo-specific automation accounts beyond generic `[bot]` detection.
+- [ ] Testing goal: add golden document-builder fixtures that prove important human context is kept while bot noise is dropped.
 
 ## Phase 4: Embeddings And Similarity Search
 
-- [ ] Implement embedding generation with `text-embedding-3-small` by default.
-- [ ] Persist embeddings in SQLite first.
-- [ ] Implement exact cosine similarity search in process.
-- [ ] Add `embed` and `search` CLI commands.
-- [ ] Measure local performance on a realistic fixture corpus.
-- [ ] Design a backend interface for optional OpenSearch support.
-- [ ] Testing goal: embedding job tests cover batching, retry, and skipped unchanged rows.
+- [x] Implement embedding generation with `text-embedding-3-small` by default.
+- [x] Persist embeddings in SQLite first.
+- [x] Implement exact cosine similarity search in process.
+- [x] Add `embed` and `search` CLI commands.
+- [ ] Measure local performance on a realistic fixture corpus and capture the numbers in docs.
+- [ ] Add retry/batching observability around embeddings and summaries so long runs are easier to operate.
+- [ ] Design a clean backend abstraction if we later want to swap exact local search with OpenSearch-backed ANN.
+- [ ] Testing goal: expand embedding job tests to cover retries, batching behavior, and unchanged-row skips more explicitly.
 
 Decision note:
 
@@ -83,7 +93,7 @@ Decision note:
 
 ## Phase 5: OpenSearch Evaluation And Optional Backend
 
-- [ ] Add a Docker Compose or equivalent local recipe for OpenSearch 3.3.
+- [ ] Add a local recipe for OpenSearch 3.3 only if local exact search is proven inadequate.
 - [ ] Implement OpenSearch index creation using `knn_vector`.
 - [ ] Start with Lucene/HNSW as the default OpenSearch backend.
 - [ ] Support metadata filters in vector search.
@@ -98,18 +108,26 @@ Decision note:
 
 ## Phase 6: Clustering
 
-- [ ] Define similarity thresholds and metadata boosts.
-- [ ] Build a kNN edge pipeline for issue-to-issue, PR-to-PR, and issue-to-PR comparisons.
-- [ ] Implement connected-component or union-find clustering.
-- [ ] Persist clusters, members, representative thread, and explanation edges.
-- [ ] Add `cluster` CLI command and rerun controls.
+- [x] Implement a first clustering pass based on nearest-neighbor edges plus connected components.
+- [x] Persist similarity edges, clusters, and cluster members.
+- [x] Add `cluster` CLI command.
+- [ ] Tune similarity thresholds and metadata boosts using real repo output.
+- [ ] Improve representative-thread selection and cluster explanation quality.
+- [ ] Decide whether issue-to-PR clustering needs different thresholds than issue-to-issue and PR-to-PR.
 - [ ] Test on a real or sanitized fixture corpus to inspect false positives and false negatives.
-- [ ] Testing goal: golden cluster fixtures prove known related threads end up together.
+- [ ] Testing goal: add golden cluster fixtures proving known related threads end up together.
 
-## Phase 7: API And UI
+## Phase 7: API And Future UI
 
-- [ ] Implement local API endpoints for health, repositories, threads, search, neighbors, and clusters.
-- [ ] Build a React UI with list/detail browsing similar in spirit to `jeerreview`.
+- [x] Implement local API endpoints for health, repositories, threads, search, clusters, and rerun actions.
+- [x] Keep the HTTP API hosted in-process by the CLI rather than as a separate daemon.
+- [x] Preserve package boundaries so future web code stays HTTP-only and does not import `api-core`.
+- [ ] Add any missing read endpoints we want before UI work:
+  - neighbors
+  - run history
+  - thread detail with summaries and optional hydrated comments
+- [ ] Build the deferred Vite web app only after the API shape settles.
+- [ ] Use `shadcn/ui` primitives with a custom visual system rather than stock styling.
 - [ ] Add filters for repo, item type, state, label, and cluster size.
 - [ ] Add detail panels that show raw text, summaries, nearest neighbors, and cluster membership.
 - [ ] Add a search view with keyword, semantic, and hybrid modes.
@@ -118,18 +136,30 @@ Decision note:
 
 ## Phase 8: Hardening
 
-- [ ] Benchmark sync, summarize, embed, and cluster times on the target corpus size.
-- [ ] Add structured logs and run-history tables.
-- [ ] Add failure recovery for partial runs.
+- [x] Persist run-history tables for sync, summarize, embed, and cluster.
+- [ ] Add more structured logs and progress summaries for summarize, embed, and cluster.
+- [ ] Add failure recovery for partial enrichment runs.
 - [ ] Add export/report helpers for maintainers to share cluster results.
 - [ ] Revisit model defaults and prompt budget after real data review.
 - [ ] Decide whether per-repo config files are needed.
+- [ ] Add database maintenance helpers:
+  - vacuum/cleanup
+  - prune stale summaries/embeddings
+  - optional reset commands scoped by repo
 - [ ] Testing goal: end-to-end local workflow test covers `doctor`, `sync`, `summarize`, `embed`, `cluster`, and `serve`.
+
+## Immediate Next Focus
+
+- [ ] Run a real full open-only crawl against `openclaw/openclaw` and inspect what the current metadata-first corpus looks like.
+- [ ] Review search quality on real examples before spending more tokens on broad summarization/embedding runs.
+- [ ] Decide whether default dedupe quality is good enough from title/body/labels alone, or whether we need selective comment hydration.
+- [ ] Add progress output for summarize, embed, and cluster similar to sync.
+- [ ] Capture a short operator guide for “full crawl vs filtered crawl vs include-comments crawl”.
 
 ## Recommended Execution Order
 
-- [ ] Finish bootstrap and config first.
-- [ ] Prove GitHub sync into SQLite before any UI work.
-- [ ] Prove document building before embeddings.
-- [ ] Prove exact local similarity before OpenSearch.
-- [ ] Prove clustering quality before polishing the UI.
+- [x] Finish bootstrap and config first.
+- [x] Prove GitHub sync into SQLite before any UI work.
+- [x] Prove document building before embeddings.
+- [x] Prove exact local similarity before OpenSearch.
+- [ ] Tune clustering quality before polishing the UI.
