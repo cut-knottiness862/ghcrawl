@@ -1,3 +1,7 @@
+import { retry } from '@octokit/plugin-retry';
+import { throttling } from '@octokit/plugin-throttling';
+import { Octokit } from 'octokit';
+
 export type GitHubClient = {
   checkAuth: (reporter?: GitHubReporter) => Promise<void>;
   getRepo: (owner: string, repo: string, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
@@ -28,15 +32,9 @@ type RequestOptions = {
   pageDelayMs?: number;
 };
 
-class GitHubRequestError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
-    super(message);
-    this.name = 'GitHubRequestError';
-  }
-}
+type OctokitPage<T> = {
+  data: T[];
+};
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -54,185 +52,170 @@ function formatDuration(ms: number): string {
   return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
 }
 
-function formatResetTime(resetSeconds: string | null): string | null {
+function formatResetTime(resetSeconds: string | null | undefined): string | null {
   if (!resetSeconds) return null;
   const value = Number(resetSeconds);
   if (!Number.isFinite(value) || value <= 0) return null;
   return new Date(value * 1000).toISOString();
 }
 
-function isRateLimitedResponse(res: Response, bodyText: string): boolean {
-  if (res.status === 429) return true;
-  if (res.status !== 403) return false;
-  if (res.headers.get('x-ratelimit-remaining') === '0') return true;
-  return /rate limit/i.test(bodyText);
-}
-
-function parseRetryDelayMs(res: Response, attempt: number, bodyText: string): number {
-  const retryAfter = res.headers.get('retry-after');
-  if (retryAfter) {
-    const retryAfterSeconds = Number(retryAfter);
-    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-      return retryAfterSeconds * 1000;
-    }
-  }
-
-  const resetAt = res.headers.get('x-ratelimit-reset');
-  if (resetAt) {
-    const resetSeconds = Number(resetAt);
-    if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
-      const waitUntilResetMs = Math.max(resetSeconds * 1000 - Date.now(), 0);
-      if (waitUntilResetMs > 0) return waitUntilResetMs;
-    }
-  }
-
-  if (isRateLimitedResponse(res, bodyText)) {
-    return 5000 + 1000 * 2 ** Math.max(attempt - 1, 0);
-  }
-
-  return Math.min(1000 * 2 ** Math.max(attempt - 1, 0), 8000);
-}
-
 export function makeGitHubClient(options: RequestOptions): GitHubClient {
   const userAgent = options.userAgent ?? 'gitcrawl';
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pageDelayMs = options.pageDelayMs ?? 5000;
+  const BaseOctokit = Octokit.plugin(retry, throttling);
 
-  async function request<T>(url: string, reporter?: GitHubReporter): Promise<{ data: T; headers: Headers }> {
-    let attempt = 0;
-    while (true) {
-      attempt += 1;
-      try {
-        if (attempt === 1) {
-          reporter?.(`[github] request ${url}`);
-        }
-        const res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${options.token}`,
-            Accept: 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': userAgent,
-          },
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-
-        if (res.ok) {
-          return { data: (await res.json()) as T, headers: res.headers };
-        }
-
-        const text = await res.text().catch(() => '');
-        const shouldRetry = res.status >= 500 || isRateLimitedResponse(res, text);
-        if (shouldRetry && attempt < 5) {
-          const waitMs = parseRetryDelayMs(res, attempt, text);
-          const resetAt = formatResetTime(res.headers.get('x-ratelimit-reset'));
-          const rateRemaining = res.headers.get('x-ratelimit-remaining');
-          const reason = isRateLimitedResponse(res, text) ? 'rate-limited' : `http ${res.status}`;
-          const resetNote = resetAt ? ` reset_at=${resetAt}` : '';
-          const remainingNote = rateRemaining ? ` remaining=${rateRemaining}` : '';
+  function createOctokit(reporter?: GitHubReporter) {
+    return new BaseOctokit({
+      auth: options.token,
+      request: {
+        timeout: timeoutMs,
+      },
+      userAgent,
+      retry: {
+        doNotRetry: [400, 401, 403, 404, 422],
+        retries: 4,
+      },
+      throttle: {
+        fallbackSecondaryRateRetryAfter: Math.ceil(pageDelayMs / 1000),
+        onRateLimit: (retryAfter, requestOptions) => {
+          const responseHeaders = (requestOptions.response as { headers?: Record<string, string> } | undefined)?.headers;
+          const resetAt = formatResetTime(responseHeaders?.['x-ratelimit-reset']);
+          const remaining = responseHeaders?.['x-ratelimit-remaining'];
+          const method = requestOptions.method ?? 'GET';
+          const url = requestOptions.url ?? 'unknown';
           reporter?.(
-            `[github] backoff ${reason} attempt=${attempt} wait=${formatDuration(waitMs)}${remainingNote}${resetNote} url=${url}`,
+            `[github] backoff rate-limited wait=${formatDuration(retryAfter * 1000)}${remaining ? ` remaining=${remaining}` : ''}${resetAt ? ` reset_at=${resetAt}` : ''} method=${method} url=${url}`,
           );
-          await delay(waitMs);
-          continue;
-        }
+          return true;
+        },
+        onSecondaryRateLimit: (retryAfter, requestOptions) => {
+          const method = requestOptions.method ?? 'GET';
+          const url = requestOptions.url ?? 'unknown';
+          reporter?.(
+            `[github] backoff secondary-rate-limit wait=${formatDuration(retryAfter * 1000)} method=${method} url=${url}`,
+          );
+          return true;
+        },
+      },
+    });
+  }
 
-        throw new GitHubRequestError(
-          `GitHub API failed ${res.status} ${res.statusText} for ${url}: ${text.slice(0, 2000)}`,
-          shouldRetry,
-        );
-      } catch (error) {
-        if (error instanceof GitHubRequestError) {
-          if (error.retryable && attempt < 5) {
-            const waitMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
-            reporter?.(`[github] retryable error attempt=${attempt} wait=${formatDuration(waitMs)} url=${url} error=${error.message}`);
-            await delay(waitMs);
-            continue;
-          }
-          throw error;
-        }
-        if (attempt < 5) {
-          const waitMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
-          const message = error instanceof Error ? error.message : String(error);
-          reporter?.(`[github] network error attempt=${attempt} wait=${formatDuration(waitMs)} url=${url} error=${message}`);
-          await delay(waitMs);
-          continue;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`GitHub request failed for ${url} after ${attempt} attempts: ${message}`);
-      }
+  async function request<T>(label: string, reporter: GitHubReporter | undefined, fn: (octokit: InstanceType<typeof BaseOctokit>) => Promise<T>): Promise<T> {
+    reporter?.(`[github] request ${label}`);
+    const octokit = createOctokit(reporter);
+    try {
+      return await fn(octokit);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`GitHub request failed for ${label}: ${message}`);
     }
   }
 
-  async function paginate<T>(url: string, limit?: number, reporter?: GitHubReporter): Promise<T[]> {
+  async function paginate<T>(
+    label: string,
+    limit: number | undefined,
+    reporter: GitHubReporter | undefined,
+    iteratorFactory: (octokit: InstanceType<typeof BaseOctokit>) => AsyncIterable<OctokitPage<T>>,
+  ): Promise<T[]> {
+    reporter?.(`[github] request ${label}`);
+    const octokit = createOctokit(reporter);
     const out: T[] = [];
-    let next: string | null = url;
-    while (next) {
-      const response: { data: T[]; headers: Headers } = await request<T[]>(next, reporter);
-      const data = typeof limit === 'number' ? response.data.slice(0, Math.max(limit - out.length, 0)) : response.data;
-      const headers: Headers = response.headers;
-      out.push(...data);
-      if (typeof limit === 'number' && out.length >= limit) {
-        break;
-      }
-      const link: string | null = headers.get('link');
-      const match: RegExpMatchArray | null | undefined = link?.match(/<([^>]+)>;\s*rel="next"/);
-      next = match?.[1] ?? null;
-      if (next) {
-        reporter?.(`[github] page boundary wait=${formatDuration(pageDelayMs)} next=${next}`);
+
+    try {
+      let pageIndex = 0;
+      for await (const page of iteratorFactory(octokit)) {
+        pageIndex += 1;
+        const remaining = typeof limit === 'number' ? Math.max(limit - out.length, 0) : page.data.length;
+        out.push(...page.data.slice(0, remaining));
+        reporter?.(`[github] page ${pageIndex} fetched count=${page.data.length} accumulated=${out.length}`);
+        if (typeof limit === 'number' && out.length >= limit) {
+          break;
+        }
         await delay(pageDelayMs);
       }
+      return out;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`GitHub pagination failed for ${label}: ${message}`);
     }
-    return out;
   }
 
   return {
     async checkAuth(reporter) {
-      await request('https://api.github.com/rate_limit', reporter);
+      await request('GET /rate_limit', reporter, async (octokit) => {
+        await octokit.request('GET /rate_limit');
+      });
     },
     async getRepo(owner, repo, reporter) {
-      const { data } = await request<Record<string, unknown>>(`https://api.github.com/repos/${owner}/${repo}`, reporter);
-      return data;
+      return request(`GET /repos/${owner}/${repo}`, reporter, async (octokit) => {
+        const response = await octokit.rest.repos.get({ owner, repo });
+        return response.data as Record<string, unknown>;
+      });
     },
     async listRepositoryIssues(owner, repo, since, limit, reporter) {
-      const search = new URLSearchParams({
-        state: 'open',
-        sort: 'updated',
-        direction: 'desc',
-        per_page: '100',
-      });
-      if (since) search.set('since', since);
-      return paginate<Record<string, unknown>>(
-        `https://api.github.com/repos/${owner}/${repo}/issues?${search.toString()}`,
+      return paginate(
+        `GET /repos/${owner}/${repo}/issues state=open per_page=100`,
         limit,
         reporter,
+        (octokit) =>
+          octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
+            owner,
+            repo,
+            state: 'open',
+            sort: 'updated',
+            direction: 'desc',
+            per_page: 100,
+            since,
+          }) as AsyncIterable<OctokitPage<Record<string, unknown>>>,
       );
     },
     async getPull(owner, repo, number, reporter) {
-      const { data } = await request<Record<string, unknown>>(
-        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
-        reporter,
-      );
-      return data;
+      return request(`GET /repos/${owner}/${repo}/pulls/${number}`, reporter, async (octokit) => {
+        const response = await octokit.rest.pulls.get({ owner, repo, pull_number: number });
+        return response.data as Record<string, unknown>;
+      });
     },
     async listIssueComments(owner, repo, number, reporter) {
-      return paginate<Record<string, unknown>>(
-        `https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`,
+      return paginate(
+        `GET /repos/${owner}/${repo}/issues/${number}/comments per_page=100`,
         undefined,
         reporter,
+        (octokit) =>
+          octokit.paginate.iterator(octokit.rest.issues.listComments, {
+            owner,
+            repo,
+            issue_number: number,
+            per_page: 100,
+          }) as AsyncIterable<OctokitPage<Record<string, unknown>>>,
       );
     },
     async listPullReviews(owner, repo, number, reporter) {
-      return paginate<Record<string, unknown>>(
-        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`,
+      return paginate(
+        `GET /repos/${owner}/${repo}/pulls/${number}/reviews per_page=100`,
         undefined,
         reporter,
+        (octokit) =>
+          octokit.paginate.iterator(octokit.rest.pulls.listReviews, {
+            owner,
+            repo,
+            pull_number: number,
+            per_page: 100,
+          }) as AsyncIterable<OctokitPage<Record<string, unknown>>>,
       );
     },
     async listPullReviewComments(owner, repo, number, reporter) {
-      return paginate<Record<string, unknown>>(
-        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`,
+      return paginate(
+        `GET /repos/${owner}/${repo}/pulls/${number}/comments per_page=100`,
         undefined,
         reporter,
+        (octokit) =>
+          octokit.paginate.iterator(octokit.rest.pulls.listReviewComments, {
+            owner,
+            repo,
+            pull_number: number,
+            per_page: 100,
+          }) as AsyncIterable<OctokitPage<Record<string, unknown>>>,
       );
     },
   };
