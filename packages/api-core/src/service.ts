@@ -262,13 +262,14 @@ export class GitcrawlService {
 
   async syncRepository(params: SyncOptions): Promise<{ runId: number; threadsSynced: number; commentsSynced: number }> {
     params.onProgress?.(`[sync] fetching repository metadata for ${params.owner}/${params.repo}`);
-    const repoData = await this.github.getRepo(params.owner, params.repo);
+    const reporter = params.onProgress ? (message: string) => params.onProgress?.(message.replace(/^\[github\]/, '[sync/github]')) : undefined;
+    const repoData = await this.github.getRepo(params.owner, params.repo, reporter);
     const repoId = this.upsertRepository(params.owner, params.repo, repoData);
     const runId = this.startRun('sync_runs', repoId, `${params.owner}/${params.repo}`);
 
     try {
       params.onProgress?.(`[sync] listing issues and pull requests for ${params.owner}/${params.repo}`);
-      const items = await this.github.listRepositoryIssues(params.owner, params.repo, params.since, params.limit);
+      const items = await this.github.listRepositoryIssues(params.owner, params.repo, params.since, params.limit, reporter);
       params.onProgress?.(`[sync] discovered ${items.length} threads to process`);
       let threadsSynced = 0;
       let commentsSynced = 0;
@@ -283,11 +284,11 @@ export class GitcrawlService {
         const kind = isPr ? 'pull_request' : 'issue';
         params.onProgress?.(`[sync] ${index + 1}/${items.length} ${kind} #${number}`);
         try {
-          const threadPayload = isPr ? await this.github.getPull(params.owner, params.repo, number) : item;
+          const threadPayload = isPr ? await this.github.getPull(params.owner, params.repo, number, reporter) : item;
           const threadId = this.upsertThread(repoId, kind, threadPayload);
           const comments: CommentSeed[] = [];
 
-          const issueComments = await this.github.listIssueComments(params.owner, params.repo, number);
+          const issueComments = await this.github.listIssueComments(params.owner, params.repo, number, reporter);
           comments.push(
             ...issueComments.map((comment) => ({
               githubId: String(comment.id),
@@ -303,7 +304,7 @@ export class GitcrawlService {
           );
 
           if (isPr) {
-            const reviews = await this.github.listPullReviews(params.owner, params.repo, number);
+            const reviews = await this.github.listPullReviews(params.owner, params.repo, number, reporter);
             comments.push(
               ...reviews.map((review) => ({
                 githubId: String(review.id),
@@ -318,7 +319,7 @@ export class GitcrawlService {
               })),
             );
 
-            const reviewComments = await this.github.listPullReviewComments(params.owner, params.repo, number);
+            const reviewComments = await this.github.listPullReviewComments(params.owner, params.repo, number, reporter);
             comments.push(
               ...reviewComments.map((comment) => ({
                 githubId: String(comment.id),

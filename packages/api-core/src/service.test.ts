@@ -17,8 +17,8 @@ test('syncRepository reports progress and persists repository/thread data', asyn
     },
     github: {
       checkAuth: async () => undefined,
-      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
-      listRepositoryIssues: async (_owner, _repo, _since, limit) =>
+      getRepo: async (_owner, _repo, _reporter) => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async (_owner, _repo, _since, limit, _reporter) =>
         [
         {
           id: 100,
@@ -32,10 +32,10 @@ test('syncRepository reports progress and persists repository/thread data', asyn
           user: { login: 'alice', type: 'User' },
         },
         ].slice(0, limit ?? 1),
-      getPull: async () => {
+      getPull: async (_owner, _repo, _number, _reporter) => {
         throw new Error('not expected');
       },
-      listIssueComments: async () => [
+      listIssueComments: async (_owner, _repo, _number, _reporter) => [
         {
           id: 200,
           body: 'same here',
@@ -44,8 +44,8 @@ test('syncRepository reports progress and persists repository/thread data', asyn
           user: { login: 'bob', type: 'User' },
         },
       ],
-      listPullReviews: async () => [],
-      listPullReviewComments: async () => [],
+      listPullReviews: async (_owner, _repo, _number, _reporter) => [],
+      listPullReviewComments: async (_owner, _repo, _number, _reporter) => [],
     },
   });
 

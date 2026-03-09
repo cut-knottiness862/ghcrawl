@@ -1,17 +1,25 @@
 export type GitHubClient = {
-  checkAuth: () => Promise<void>;
-  getRepo: (owner: string, repo: string) => Promise<Record<string, unknown>>;
+  checkAuth: (reporter?: GitHubReporter) => Promise<void>;
+  getRepo: (owner: string, repo: string, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
   listRepositoryIssues: (
     owner: string,
     repo: string,
     since?: string,
     limit?: number,
+    reporter?: GitHubReporter,
   ) => Promise<Array<Record<string, unknown>>>;
-  getPull: (owner: string, repo: string, number: number) => Promise<Record<string, unknown>>;
-  listIssueComments: (owner: string, repo: string, number: number) => Promise<Array<Record<string, unknown>>>;
-  listPullReviews: (owner: string, repo: string, number: number) => Promise<Array<Record<string, unknown>>>;
-  listPullReviewComments: (owner: string, repo: string, number: number) => Promise<Array<Record<string, unknown>>>;
+  getPull: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
+  listIssueComments: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Array<Record<string, unknown>>>;
+  listPullReviews: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Array<Record<string, unknown>>>;
+  listPullReviewComments: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Array<Record<string, unknown>>>;
 };
+
+export type GitHubReporter = (message: string) => void;
 
 type RequestOptions = {
   token: string;
@@ -32,6 +40,25 @@ class GitHubRequestError extends Error {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.ceil(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+}
+
+function formatResetTime(resetSeconds: string | null): string | null {
+  if (!resetSeconds) return null;
+  const value = Number(resetSeconds);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return new Date(value * 1000).toISOString();
 }
 
 function isRateLimitedResponse(res: Response, bodyText: string): boolean {
@@ -71,11 +98,14 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pageDelayMs = options.pageDelayMs ?? 5000;
 
-  async function request<T>(url: string): Promise<{ data: T; headers: Headers }> {
+  async function request<T>(url: string, reporter?: GitHubReporter): Promise<{ data: T; headers: Headers }> {
     let attempt = 0;
     while (true) {
       attempt += 1;
       try {
+        if (attempt === 1) {
+          reporter?.(`[github] request ${url}`);
+        }
         const res = await fetch(url, {
           headers: {
             Authorization: `Bearer ${options.token}`,
@@ -93,7 +123,16 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
         const text = await res.text().catch(() => '');
         const shouldRetry = res.status >= 500 || isRateLimitedResponse(res, text);
         if (shouldRetry && attempt < 5) {
-          await delay(parseRetryDelayMs(res, attempt, text));
+          const waitMs = parseRetryDelayMs(res, attempt, text);
+          const resetAt = formatResetTime(res.headers.get('x-ratelimit-reset'));
+          const rateRemaining = res.headers.get('x-ratelimit-remaining');
+          const reason = isRateLimitedResponse(res, text) ? 'rate-limited' : `http ${res.status}`;
+          const resetNote = resetAt ? ` reset_at=${resetAt}` : '';
+          const remainingNote = rateRemaining ? ` remaining=${rateRemaining}` : '';
+          reporter?.(
+            `[github] backoff ${reason} attempt=${attempt} wait=${formatDuration(waitMs)}${remainingNote}${resetNote} url=${url}`,
+          );
+          await delay(waitMs);
           continue;
         }
 
@@ -104,13 +143,18 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       } catch (error) {
         if (error instanceof GitHubRequestError) {
           if (error.retryable && attempt < 5) {
-            await delay(Math.min(1000 * 2 ** (attempt - 1), 8000));
+            const waitMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
+            reporter?.(`[github] retryable error attempt=${attempt} wait=${formatDuration(waitMs)} url=${url} error=${error.message}`);
+            await delay(waitMs);
             continue;
           }
           throw error;
         }
         if (attempt < 5) {
-          await delay(Math.min(1000 * 2 ** (attempt - 1), 8000));
+          const waitMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
+          const message = error instanceof Error ? error.message : String(error);
+          reporter?.(`[github] network error attempt=${attempt} wait=${formatDuration(waitMs)} url=${url} error=${message}`);
+          await delay(waitMs);
           continue;
         }
         const message = error instanceof Error ? error.message : String(error);
@@ -119,11 +163,11 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
     }
   }
 
-  async function paginate<T>(url: string, limit?: number): Promise<T[]> {
+  async function paginate<T>(url: string, limit?: number, reporter?: GitHubReporter): Promise<T[]> {
     const out: T[] = [];
     let next: string | null = url;
     while (next) {
-      const response: { data: T[]; headers: Headers } = await request<T[]>(next);
+      const response: { data: T[]; headers: Headers } = await request<T[]>(next, reporter);
       const data = typeof limit === 'number' ? response.data.slice(0, Math.max(limit - out.length, 0)) : response.data;
       const headers: Headers = response.headers;
       out.push(...data);
@@ -134,6 +178,7 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       const match: RegExpMatchArray | null | undefined = link?.match(/<([^>]+)>;\s*rel="next"/);
       next = match?.[1] ?? null;
       if (next) {
+        reporter?.(`[github] page boundary wait=${formatDuration(pageDelayMs)} next=${next}`);
         await delay(pageDelayMs);
       }
     }
@@ -141,14 +186,14 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
   }
 
   return {
-    async checkAuth() {
-      await request('https://api.github.com/rate_limit');
+    async checkAuth(reporter) {
+      await request('https://api.github.com/rate_limit', reporter);
     },
-    async getRepo(owner, repo) {
-      const { data } = await request<Record<string, unknown>>(`https://api.github.com/repos/${owner}/${repo}`);
+    async getRepo(owner, repo, reporter) {
+      const { data } = await request<Record<string, unknown>>(`https://api.github.com/repos/${owner}/${repo}`, reporter);
       return data;
     },
-    async listRepositoryIssues(owner, repo, since, limit) {
+    async listRepositoryIssues(owner, repo, since, limit, reporter) {
       const search = new URLSearchParams({
         state: 'open',
         sort: 'updated',
@@ -159,25 +204,35 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       return paginate<Record<string, unknown>>(
         `https://api.github.com/repos/${owner}/${repo}/issues?${search.toString()}`,
         limit,
+        reporter,
       );
     },
-    async getPull(owner, repo, number) {
-      const { data } = await request<Record<string, unknown>>(`https://api.github.com/repos/${owner}/${repo}/pulls/${number}`);
+    async getPull(owner, repo, number, reporter) {
+      const { data } = await request<Record<string, unknown>>(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+        reporter,
+      );
       return data;
     },
-    async listIssueComments(owner, repo, number) {
+    async listIssueComments(owner, repo, number, reporter) {
       return paginate<Record<string, unknown>>(
         `https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`,
+        undefined,
+        reporter,
       );
     },
-    async listPullReviews(owner, repo, number) {
+    async listPullReviews(owner, repo, number, reporter) {
       return paginate<Record<string, unknown>>(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`,
+        undefined,
+        reporter,
       );
     },
-    async listPullReviewComments(owner, repo, number) {
+    async listPullReviewComments(owner, repo, number, reporter) {
       return paginate<Record<string, unknown>>(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`,
+        undefined,
+        reporter,
       );
     },
   };
