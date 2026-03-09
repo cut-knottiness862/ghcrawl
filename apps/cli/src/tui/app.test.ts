@@ -1,9 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { TuiClusterDetail, TuiThreadDetail } from '@gitcrawl/api-core';
+import type { TuiClusterDetail, TuiRepoStats, TuiThreadDetail } from '@gitcrawl/api-core';
 
-import { escapeBlessedText, getRepositoryChoices, parseOwnerRepoValue, renderDetailPane } from './app.js';
+import {
+  buildUpdatePipelineLabels,
+  describeUpdateTask,
+  escapeBlessedText,
+  getRepositoryChoices,
+  parseOwnerRepoValue,
+  renderDetailPane,
+} from './app.js';
 
 test('escapeBlessedText escapes blessed tag delimiters', () => {
   assert.equal(escapeBlessedText('{bold}wow{/bold}'), '\\{bold\\}wow\\{/bold\\}');
@@ -95,4 +102,57 @@ test('getRepositoryChoices sorts by most recent update and includes the new-repo
   assert.equal(choices[0]?.target.owner, 'newer');
   assert.match(choices[0]?.label ?? '', /newer\/repo/);
   assert.equal(choices.at(-1)?.kind, 'new');
+});
+
+test('describeUpdateTask reports stale embeddings relative to GitHub sync', () => {
+  const stats: TuiRepoStats = {
+    openIssueCount: 10,
+    openPullRequestCount: 5,
+    lastGithubReconciliationAt: '2026-03-09T14:00:00Z',
+    lastEmbedRefreshAt: '2026-03-09T12:00:00Z',
+    staleEmbedThreadCount: 0,
+    staleEmbedSourceCount: 0,
+    latestClusterRunId: 7,
+    latestClusterRunFinishedAt: '2026-03-09T14:30:00Z',
+  };
+
+  assert.equal(describeUpdateTask('embed', stats, new Date('2026-03-09T15:00:00Z')), 'older than GitHub sync by 2h');
+});
+
+test('describeUpdateTask reports stale clusters relative to embed refresh', () => {
+  const stats: TuiRepoStats = {
+    openIssueCount: 10,
+    openPullRequestCount: 5,
+    lastGithubReconciliationAt: '2026-03-09T14:00:00Z',
+    lastEmbedRefreshAt: '2026-03-09T15:00:00Z',
+    staleEmbedThreadCount: 0,
+    staleEmbedSourceCount: 0,
+    latestClusterRunId: 7,
+    latestClusterRunFinishedAt: '2026-03-09T12:00:00Z',
+  };
+
+  assert.equal(describeUpdateTask('cluster', stats, new Date('2026-03-09T16:00:00Z')), 'older than embed refresh by 3h');
+});
+
+test('buildUpdatePipelineLabels marks the selected tasks and includes task guidance', () => {
+  const stats: TuiRepoStats = {
+    openIssueCount: 10,
+    openPullRequestCount: 5,
+    lastGithubReconciliationAt: '2026-03-09T14:00:00Z',
+    lastEmbedRefreshAt: '2026-03-09T15:00:00Z',
+    staleEmbedThreadCount: 2,
+    staleEmbedSourceCount: 4,
+    latestClusterRunId: 7,
+    latestClusterRunFinishedAt: '2026-03-09T12:00:00Z',
+  };
+
+  const labels = buildUpdatePipelineLabels(
+    stats,
+    { sync: true, embed: true, cluster: false },
+    new Date('2026-03-09T16:00:00Z'),
+  );
+
+  assert.match(labels[0] ?? '', /^\[x\] GitHub sync\/reconcile  last 2h ago$/);
+  assert.match(labels[1] ?? '', /^\[x\] Embed refresh  2 stale, last 1h ago$/);
+  assert.match(labels[2] ?? '', /^\[ \] Cluster rebuild  older than embed refresh by 3h$/);
 });
