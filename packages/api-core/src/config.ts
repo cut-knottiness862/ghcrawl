@@ -75,6 +75,10 @@ type LayeredValue<T> = {
   value: T | undefined;
 };
 
+function pathModuleForPlatform(platform: NodeJS.Platform) {
+  return platform === 'win32' ? path.win32 : path;
+}
+
 function findWorkspaceRoot(start: string): string {
   let current = path.resolve(start);
   while (true) {
@@ -95,17 +99,20 @@ function resolveHomeDirectory(env: NodeJS.ProcessEnv): string {
 export function getConfigDir(options: LoadConfigOptions = {}): string {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
+  const pathModule = pathModuleForPlatform(platform);
   if (env.XDG_CONFIG_HOME) {
-    return path.resolve(env.XDG_CONFIG_HOME, 'gitcrawl');
+    return pathModule.resolve(env.XDG_CONFIG_HOME, 'gitcrawl');
   }
   if (platform === 'win32' && env.APPDATA) {
-    return path.resolve(env.APPDATA, 'gitcrawl');
+    return pathModule.resolve(env.APPDATA, 'gitcrawl');
   }
-  return path.join(resolveHomeDirectory(env), '.config', 'gitcrawl');
+  return pathModule.join(resolveHomeDirectory(env), '.config', 'gitcrawl');
 }
 
 export function getConfigPath(options: LoadConfigOptions = {}): string {
-  return path.join(getConfigDir(options), 'config.json');
+  const platform = options.platform ?? process.platform;
+  const pathModule = pathModuleForPlatform(platform);
+  return pathModule.join(getConfigDir(options), 'config.json');
 }
 
 function readDotenvFile(workspaceRoot: string): Record<string, string> {
@@ -238,8 +245,9 @@ export function isLikelyOpenAiApiKey(value: string): boolean {
 export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
   const workspaceRoot = findWorkspaceRoot(cwd);
-  const stored = readPersistedConfig({ cwd, env });
+  const stored = readPersistedConfig({ cwd, env, platform });
   const dotenvValues = readDotenvFile(workspaceRoot);
 
   const githubToken = pickDefined<string>(
