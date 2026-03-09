@@ -10,10 +10,11 @@ test('cycleSortMode toggles recent and size', () => {
 });
 
 test('cycleMinSizeFilter rotates through presets', () => {
+  assert.equal(cycleMinSizeFilter(1), 10);
   assert.equal(cycleMinSizeFilter(10), 20);
   assert.equal(cycleMinSizeFilter(20), 50);
   assert.equal(cycleMinSizeFilter(50), 0);
-  assert.equal(cycleMinSizeFilter(0), 10);
+  assert.equal(cycleMinSizeFilter(0), 1);
 });
 
 test('cycleFocusPane moves forward and backward', () => {

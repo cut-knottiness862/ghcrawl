@@ -9,6 +9,7 @@ import type {
   TuiSnapshot,
   TuiThreadDetail,
 } from '@gitcrawl/api-core';
+import { getTuiRepositoryPreference, writeTuiRepositoryPreference } from '@gitcrawl/api-core';
 import {
   buildMemberRows,
   cycleFocusPane,
@@ -73,8 +74,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const widgets = createWidgets(currentRepository.owner, currentRepository.repo);
 
   let focusPane: TuiFocusPane = 'clusters';
-  let sortMode: TuiClusterSortMode = 'recent';
-  let minSize: TuiMinSizeFilter = 10;
+  const initialPreference = getTuiRepositoryPreference(params.service.config, currentRepository.owner, currentRepository.repo);
+  let sortMode: TuiClusterSortMode = initialPreference.sortMode;
+  let minSize: TuiMinSizeFilter = initialPreference.minClusterSize;
   let search = '';
   let snapshot: TuiSnapshot | null = null;
   let clusterDetail: TuiClusterDetail | null = null;
@@ -412,8 +414,27 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const hasActiveJobs = (): boolean => syncJobRunning || embedJobRunning || clusterJobRunning;
 
-  const switchRepository = (target: RepositoryTarget): void => {
+  const persistRepositoryPreference = (): void => {
+    writeTuiRepositoryPreference(params.service.config, {
+      owner: currentRepository.owner,
+      repo: currentRepository.repo,
+      minClusterSize: minSize,
+      sortMode,
+    });
+  };
+
+  const switchRepository = (
+    target: RepositoryTarget,
+    overrides?: Partial<{
+      minClusterSize: TuiMinSizeFilter;
+      sortMode: TuiClusterSortMode;
+    }>,
+  ): void => {
     currentRepository = target;
+    const preference = getTuiRepositoryPreference(params.service.config, target.owner, target.repo);
+    minSize = overrides?.minClusterSize ?? preference.minClusterSize;
+    sortMode = overrides?.sortMode ?? preference.sortMode;
+    persistRepositoryPreference();
     clearCaches();
     search = '';
     snapshot = null;
@@ -459,7 +480,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         onProgress: pushActivity,
       });
       pushActivity(`[repo] initial setup complete for ${target.owner}/${target.repo}`);
-      switchRepository(target);
+      switchRepository(target, { minClusterSize: 1 });
       return true;
     } catch (error) {
       pushActivity(
@@ -574,12 +595,14 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   widgets.screen.key(['s'], () => {
     if (modalOpen) return;
     sortMode = cycleSortMode(sortMode);
+    persistRepositoryPreference();
     status = `Sort: ${sortMode}`;
     refreshAll(false);
   });
   widgets.screen.key(['f'], () => {
     if (modalOpen) return;
     minSize = cycleMinSizeFilter(minSize);
+    persistRepositoryPreference();
     status = `Min size: ${minSize === 0 ? 'all' : `${minSize}+`}`;
     refreshAll(false);
   });
@@ -1098,6 +1121,12 @@ async function runColdStartSetup(
       owner: target.owner,
       repo: target.repo,
       onProgress: reporter,
+    });
+    writeTuiRepositoryPreference(service.config, {
+      owner: target.owner,
+      repo: target.repo,
+      minClusterSize: 1,
+      sortMode: 'recent',
     });
     log?.log('[setup] initial setup complete');
     return true;

@@ -14,6 +14,8 @@ function makeTestConfig(overrides: Partial<GitcrawlService['config']> = {}): Git
     apiPort: 5179,
     githubToken: 'ghp_testtoken1234567890',
     githubTokenSource: 'config',
+    secretProvider: 'plaintext',
+    tuiPreferences: {},
     openaiApiKeySource: 'none',
     summaryModel: 'gpt-5-mini',
     embedModel: 'text-embedding-3-large',
@@ -107,6 +109,30 @@ test('doctor reports invalid token format without attempting auth', async () => 
     assert.equal(result.github.authOk, false);
     assert.match(result.github.error ?? '', /does not look like a GitHub personal access token/);
     assert.equal(githubChecked, 0);
+  } finally {
+    service.close();
+  }
+});
+
+test('doctor explains when secrets are expected from 1Password CLI env injection', async () => {
+  const service = new GitcrawlService({
+    config: makeTestConfig({
+      githubToken: undefined,
+      githubTokenSource: 'none',
+      openaiApiKey: undefined,
+      openaiApiKeySource: 'none',
+      secretProvider: 'op',
+      opVaultName: 'PwrDrvr LLC',
+      opItemName: 'gitcrawl',
+    }),
+  });
+
+  try {
+    const result = await service.doctor();
+    assert.equal(result.github.configured, false);
+    assert.match(result.github.error ?? '', /1Password CLI/);
+    assert.equal(result.openai.configured, false);
+    assert.match(result.openai.error ?? '', /OPENAI_API_KEY/);
   } finally {
     service.close();
   }

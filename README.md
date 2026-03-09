@@ -18,7 +18,7 @@ pnpm doctor
 
 For a full first-run walkthrough against `openclaw/openclaw`, see [GETTING-STARTED.md](/Users/huntharo/github/gitcrawl/GETTING-STARTED.md).
 
-`pnpm bootstrap` runs the interactive setup wizard the first time and saves config to `~/.config/gitcrawl/config.json` by default. You do not need a repo-local `.env.local` file for normal use.
+`pnpm bootstrap` runs the interactive setup wizard the first time. It can either save plaintext keys in `~/.config/gitcrawl/config.json` or guide you through a 1Password CLI (`op`) setup that keeps keys out of the config file. You do not need a repo-local `.env.local` file for normal use.
 
 ## Root Helpers
 
@@ -86,10 +86,15 @@ pnpm doctor
 
 `init` / `bootstrap` behavior:
 
-- saves config to `~/.config/gitcrawl/config.json` by default
-- prompts for the two required API keys:
-  - GitHub personal access token
-  - OpenAI API key
+- prompts you to choose one of two secret-storage modes:
+  - `plaintext`: saves both keys to `~/.config/gitcrawl/config.json`
+  - `1Password CLI`: stores only vault/item metadata and tells you how to run gitcrawl through `op`
+- if you choose plaintext storage, init warns that anyone who can read that file can use your keys and that any resulting OpenAI bills are your responsibility
+- if you choose 1Password CLI mode, init asks for:
+  - Vault name
+  - Item name
+  - and tells you to create a Secure Note with concealed fields named `GITHUB_TOKEN` and `OPENAI_API_KEY`
+- init also prints a ready-to-paste `~/.zshrc` wrapper function and an example `op read` command
 - re-running `pnpm bootstrap` is idempotent once both keys are already stored
 - use `pnpm bootstrap -- --reconfigure` or `gitcrawl init --reconfigure` if you want to replace stored keys
 
@@ -108,6 +113,7 @@ GitHub token guidance:
 - local DB path wiring
 - GitHub token presence, token-shape validation, and a live auth smoke check
 - OpenAI key presence, key-shape validation, and a live auth smoke check
+- if init is configured for 1Password CLI but you forgot to run through your `op` wrapper, doctor tells you that explicitly
 
 Environment overrides are still supported and take precedence over the saved config:
 
@@ -140,6 +146,8 @@ For local development, repo-root `.env.local` is still accepted as a fallback, b
 - `embed` and `cluster` print timestamped progress lines to stderr during long runs.
 - `neighbors` shows exact local nearest neighbors for one embedded thread and is useful for inspecting vector quality before clustering.
 - `tui` opens the local full-screen cluster browser with cluster list, member list, and thread detail panes.
-- `tui` defaults to showing clusters of size `10+`; use `f` inside the TUI to cycle `10`, `20`, `50`, and `all`.
+- `tui` remembers sort order and min cluster size per repository in the persisted config file.
+- `tui` defaults to showing clusters of size `10+`; use `f` inside the TUI to cycle `1`, `10`, `20`, `50`, and `all`.
+- if you add a brand-new repo from the TUI with `p`, gitcrawl runs sync -> embed -> cluster and opens that repo with min cluster size `1+` so you can see everything immediately.
 - sync now pauses between 100-thread batches and uses stronger rate-limit backoff, but a long crawl can still hit GitHub limits.
 - For a first pass on a large repository, prefer `sync --since <iso-timestamp>` before doing a full backfill.

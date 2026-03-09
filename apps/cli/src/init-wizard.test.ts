@@ -12,6 +12,10 @@ function makePrompter(overrides: Partial<InitPrompter> = {}): InitPrompter {
   return {
     intro: async () => undefined,
     note: async () => undefined,
+    select: async () => 'plaintext',
+    text: async () => {
+      throw new Error('unexpected text prompt');
+    },
     confirm: async () => true,
     password: async () => {
       throw new Error('unexpected password prompt');
@@ -51,6 +55,7 @@ test('runInitWizard prompts for missing keys and writes the config file', async 
   const result = await runInitWizard({
     env,
     prompter: makePrompter({
+      select: async () => 'plaintext',
       password: async ({ message }) => {
         prompts.push(message);
         return message.includes('GitHub') ? 'ghp_testtoken1234567890' : 'sk-proj-testkey1234567890';
@@ -79,6 +84,7 @@ test('runInitWizard can persist detected environment keys without prompting for 
   const result = await runInitWizard({
     env,
     prompter: makePrompter({
+      select: async () => 'plaintext',
       confirm: async () => true,
     }),
     isInteractive: true,
@@ -88,4 +94,31 @@ test('runInitWizard can persist detected environment keys without prompting for 
   const persisted = readPersistedConfig({ env });
   assert.equal(persisted.data.githubToken, 'ghp_envtoken1234567890');
   assert.equal(persisted.data.openaiApiKey, 'sk-proj-envkey1234567890');
+});
+
+test('runInitWizard can configure 1Password CLI metadata without persisting plaintext keys', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-init-test-'));
+  const env = { ...process.env, HOME: home };
+  const notes: Array<{ title?: string; message: string }> = [];
+
+  const result = await runInitWizard({
+    env,
+    prompter: makePrompter({
+      select: async () => 'op',
+      text: async ({ message }) => (message.includes('vault') ? 'PwrDrvr LLC' : 'gitcrawl'),
+      note: async (message, title) => {
+        notes.push({ title, message });
+      },
+    }),
+    isInteractive: true,
+  });
+
+  assert.equal(result.changed, true);
+  const persisted = readPersistedConfig({ env });
+  assert.equal(persisted.data.secretProvider, 'op');
+  assert.equal(persisted.data.opVaultName, 'PwrDrvr LLC');
+  assert.equal(persisted.data.opItemName, 'gitcrawl');
+  assert.equal(persisted.data.githubToken, undefined);
+  assert.equal(persisted.data.openaiApiKey, undefined);
+  assert.equal(notes.some((entry) => entry.title === '1Password CLI' && entry.message.includes('gitcrawl-op()')), true);
 });

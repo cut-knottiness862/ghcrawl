@@ -6,10 +6,12 @@ import path from 'node:path';
 
 import {
   getConfigPath,
+  getTuiRepositoryPreference,
   isLikelyGitHubToken,
   isLikelyOpenAiApiKey,
   loadConfig,
   readPersistedConfig,
+  writeTuiRepositoryPreference,
   writePersistedConfig,
 } from './config.js';
 
@@ -129,6 +131,68 @@ test('writePersistedConfig creates a readable config file', () => {
   const persisted = readPersistedConfig({ env });
   assert.equal(persisted.data.githubToken, 'ghp_testtoken1234567890');
   assert.equal(persisted.data.openaiApiKey, 'sk-proj-testkey1234567890');
+});
+
+test('loadConfig restores op metadata and repository tui preferences', () => {
+  const home = makeTempHome();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-workspace-'));
+  fs.writeFileSync(path.join(workspace, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
+  const env = {
+    ...process.env,
+    HOME: home,
+  };
+
+  writePersistedConfig(
+    {
+      secretProvider: 'op',
+      opVaultName: 'PwrDrvr LLC',
+      opItemName: 'gitcrawl',
+      tuiPreferences: {
+        'openclaw/openclaw': {
+          minClusterSize: 1,
+          sortMode: 'size',
+        },
+      },
+    },
+    { env },
+  );
+
+  const config = loadConfig({ cwd: workspace, env });
+  assert.equal(config.secretProvider, 'op');
+  assert.equal(config.opVaultName, 'PwrDrvr LLC');
+  assert.equal(config.opItemName, 'gitcrawl');
+  assert.deepEqual(getTuiRepositoryPreference(config, 'openclaw', 'openclaw'), {
+    minClusterSize: 1,
+    sortMode: 'size',
+  });
+});
+
+test('writeTuiRepositoryPreference persists sort and min cluster size by repository', () => {
+  const home = makeTempHome();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-workspace-'));
+  fs.writeFileSync(path.join(workspace, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
+  const env = {
+    ...process.env,
+    HOME: home,
+  };
+
+  const config = loadConfig({ cwd: workspace, env });
+  writeTuiRepositoryPreference(config, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    minClusterSize: 1,
+    sortMode: 'size',
+  });
+
+  const reloaded = loadConfig({ cwd: workspace, env });
+  assert.deepEqual(getTuiRepositoryPreference(reloaded, 'openclaw', 'openclaw'), {
+    minClusterSize: 1,
+    sortMode: 'size',
+  });
+  assert.deepEqual(getTuiRepositoryPreference(reloaded, 'other', 'repo'), {
+    minClusterSize: 10,
+    sortMode: 'recent',
+  });
 });
 
 test('getConfigPath uses APPDATA on Windows', () => {

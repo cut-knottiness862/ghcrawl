@@ -16,6 +16,7 @@ test('health endpoint returns contract payload', async () => {
       dbPath: ':memory:',
       dbPathSource: 'config',
       apiPort: 5179,
+      secretProvider: 'plaintext',
       githubTokenSource: 'none',
       openaiApiKeySource: 'none',
       summaryModel: 'gpt-5-mini',
@@ -24,6 +25,7 @@ test('health endpoint returns contract payload', async () => {
       embedConcurrency: 10,
       embedMaxUnread: 20,
       openSearchIndex: 'gitcrawl-threads',
+      tuiPreferences: {},
     },
     github: {
       checkAuth: async () => undefined,
@@ -64,6 +66,7 @@ test('neighbors endpoint returns contract payload', async () => {
       dbPath: ':memory:',
       dbPathSource: 'config',
       apiPort: 5179,
+      secretProvider: 'plaintext',
       githubTokenSource: 'none',
       openaiApiKeySource: 'none',
       summaryModel: 'gpt-5-mini',
@@ -72,6 +75,7 @@ test('neighbors endpoint returns contract payload', async () => {
       embedConcurrency: 10,
       embedMaxUnread: 20,
       openSearchIndex: 'gitcrawl-threads',
+      tuiPreferences: {},
     },
     github: {
       checkAuth: async () => undefined,
@@ -154,6 +158,7 @@ test('server returns 400 for malformed request inputs', async () => {
       dbPath: ':memory:',
       dbPathSource: 'config',
       apiPort: 5179,
+      secretProvider: 'plaintext',
       githubTokenSource: 'none',
       openaiApiKeySource: 'none',
       summaryModel: 'gpt-5-mini',
@@ -162,6 +167,7 @@ test('server returns 400 for malformed request inputs', async () => {
       embedConcurrency: 10,
       embedMaxUnread: 20,
       openSearchIndex: 'gitcrawl-threads',
+      tuiPreferences: {},
     },
     github: {
       checkAuth: async () => undefined,

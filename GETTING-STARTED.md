@@ -33,7 +33,10 @@ Initialize gitcrawl config, runtime paths, and DB:
 pnpm bootstrap
 ```
 
-This opens the setup wizard the first time and stores config in `~/.config/gitcrawl/config.json`.
+This opens the setup wizard the first time. You can either:
+
+- store both keys in plaintext in `~/.config/gitcrawl/config.json`
+- or keep them in 1Password CLI (`op`) and let init print a wrapper example for your shell
 
 Recommended GitHub token shape:
 
@@ -52,7 +55,23 @@ Check GitHub auth, OpenAI auth, and DB wiring:
 pnpm doctor
 ```
 
-`doctor` also validates whether the GitHub token and OpenAI key look structurally correct before it runs the live smoke checks.
+`doctor` also validates whether the GitHub token and OpenAI key look structurally correct before it runs the live smoke checks. If you configured `gitcrawl` for 1Password CLI but forgot to run through your `op` wrapper, `doctor` now tells you that too.
+
+### 1Password CLI option
+
+If you choose 1Password CLI mode in `pnpm bootstrap`, create a Secure Note in 1Password with concealed fields named exactly:
+
+- `GITHUB_TOKEN`
+- `OPENAI_API_KEY`
+
+Then use the wrapper init shows you, or run a command like this:
+
+```bash
+env \
+  GITHUB_TOKEN="$(op read 'op://PwrDrvr LLC/gitcrawl/GITHUB_TOKEN')" \
+  OPENAI_API_KEY="$(op read 'op://PwrDrvr LLC/gitcrawl/OPENAI_API_KEY')" \
+  pnpm --filter @gitcrawl/cli cli doctor
+```
 
 ## Sync `openclaw/openclaw`
 
@@ -133,7 +152,9 @@ Notes:
 - the embedding worker defaults are `batch_size=8`, `concurrency=10`, and `max_unread=20`; override them with `GITCRAWL_EMBED_BATCH_SIZE`, `GITCRAWL_EMBED_CONCURRENCY`, and `GITCRAWL_EMBED_MAX_UNREAD` if needed
 - `neighbors` only works after `embed` has populated at least one embedding source for the repo
 - `tui` expects a completed cluster run and shows the latest completed run for the repo
-- inside the TUI: `Tab` changes pane, `j/k` moves, `s` changes sort, `f` changes min cluster size, `/` filters, `o` opens the selected GitHub URL, and `q` quits
+- inside the TUI: `Tab` changes pane, `j/k` moves, `s` changes sort, `f` changes min cluster size, `p` opens repo browsing, `/` filters, `o` opens the selected GitHub URL, and `q` quits
+- sort order and min cluster size are remembered per repository
+- if you add a brand-new repo from inside the TUI, gitcrawl runs sync -> embed -> cluster and opens that repo at min cluster size `1+`
 
 ## Search
 

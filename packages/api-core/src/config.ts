@@ -5,10 +5,21 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 
 export type ConfigValueSource = 'env' | 'config' | 'dotenv' | 'default' | 'none';
+export type SecretProvider = 'plaintext' | 'op';
+export type TuiSortPreference = 'recent' | 'size';
+export type TuiMinClusterSize = 0 | 1 | 10 | 20 | 50;
+
+export type TuiRepositoryPreference = {
+  minClusterSize: TuiMinClusterSize;
+  sortMode: TuiSortPreference;
+};
 
 export type PersistedGitcrawlConfig = {
   githubToken?: string;
   openaiApiKey?: string;
+  secretProvider?: SecretProvider;
+  opVaultName?: string;
+  opItemName?: string;
   dbPath?: string;
   apiPort?: number;
   summaryModel?: string;
@@ -18,6 +29,7 @@ export type PersistedGitcrawlConfig = {
   embedMaxUnread?: number;
   openSearchUrl?: string;
   openSearchIndex?: string;
+  tuiPreferences?: Record<string, TuiRepositoryPreference>;
 };
 
 export type GitcrawlConfig = {
@@ -32,6 +44,9 @@ export type GitcrawlConfig = {
   githubTokenSource: ConfigValueSource;
   openaiApiKey?: string;
   openaiApiKeySource: ConfigValueSource;
+  secretProvider: SecretProvider;
+  opVaultName?: string;
+  opItemName?: string;
   summaryModel: string;
   embedModel: string;
   embedBatchSize: number;
@@ -39,6 +54,7 @@ export type GitcrawlConfig = {
   embedMaxUnread: number;
   openSearchUrl?: string;
   openSearchIndex: string;
+  tuiPreferences: Record<string, TuiRepositoryPreference>;
 };
 
 type LoadedStoredConfig = {
@@ -117,6 +133,40 @@ function getNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function getSecretProvider(value: unknown): SecretProvider | undefined {
+  return value === 'plaintext' || value === 'op' ? value : undefined;
+}
+
+function getTuiSortPreference(value: unknown): TuiSortPreference | undefined {
+  return value === 'recent' || value === 'size' ? value : undefined;
+}
+
+function getTuiMinClusterSize(value: unknown): TuiMinClusterSize | undefined {
+  return value === 0 || value === 1 || value === 10 || value === 20 || value === 50 ? value : undefined;
+}
+
+function getTuiPreferences(value: unknown): Record<string, TuiRepositoryPreference> | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const preferences: Record<string, TuiRepositoryPreference> = {};
+  for (const [fullName, preference] of Object.entries(value as Record<string, unknown>)) {
+    if (!preference || typeof preference !== 'object') {
+      continue;
+    }
+    const record = preference as Record<string, unknown>;
+    const minClusterSize = getTuiMinClusterSize(record.minClusterSize);
+    const sortMode = getTuiSortPreference(record.sortMode);
+    if (minClusterSize === undefined || sortMode === undefined) {
+      continue;
+    }
+    preferences[fullName] = { minClusterSize, sortMode };
+  }
+
+  return preferences;
+}
+
 export function readPersistedConfig(options: LoadConfigOptions = {}): LoadedStoredConfig {
   const configDir = getConfigDir(options);
   const configPath = getConfigPath(options);
@@ -132,6 +182,9 @@ export function readPersistedConfig(options: LoadConfigOptions = {}): LoadedStor
     data: {
       githubToken: getString(raw.githubToken),
       openaiApiKey: getString(raw.openaiApiKey),
+      secretProvider: getSecretProvider(raw.secretProvider),
+      opVaultName: getString(raw.opVaultName),
+      opItemName: getString(raw.opItemName),
       dbPath: getString(raw.dbPath),
       apiPort: getNumber(raw.apiPort),
       summaryModel: getString(raw.summaryModel),
@@ -141,6 +194,7 @@ export function readPersistedConfig(options: LoadConfigOptions = {}): LoadedStor
       embedMaxUnread: getNumber(raw.embedMaxUnread),
       openSearchUrl: getString(raw.openSearchUrl),
       openSearchIndex: getString(raw.openSearchIndex),
+      tuiPreferences: getTuiPreferences(raw.tuiPreferences),
     },
   };
 }
@@ -277,6 +331,9 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     githubTokenSource: githubToken.source,
     openaiApiKey: openaiApiKey.value,
     openaiApiKeySource: openaiApiKey.source,
+    secretProvider: stored.data.secretProvider ?? 'plaintext',
+    opVaultName: stored.data.opVaultName,
+    opItemName: stored.data.opItemName,
     summaryModel: summaryModel.value ?? 'gpt-5-mini',
     embedModel: embedModel.value ?? 'text-embedding-3-large',
     embedBatchSize,
@@ -284,6 +341,7 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     embedMaxUnread,
     openSearchUrl: openSearchUrl.value,
     openSearchIndex: openSearchIndex.value ?? 'gitcrawl-threads',
+    tuiPreferences: stored.data.tuiPreferences ?? {},
   };
 }
 
@@ -292,8 +350,43 @@ export function ensureRuntimeDirs(config: GitcrawlConfig): void {
   fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 }
 
+export function getTuiRepositoryPreference(config: GitcrawlConfig, owner: string, repo: string): TuiRepositoryPreference {
+  return config.tuiPreferences[`${owner}/${repo}`] ?? { minClusterSize: 10, sortMode: 'recent' };
+}
+
+export function writeTuiRepositoryPreference(
+  config: GitcrawlConfig,
+  params: { owner: string; repo: string; minClusterSize: TuiMinClusterSize; sortMode: TuiSortPreference },
+): { configPath: string } {
+  const fullName = `${params.owner}/${params.repo}`;
+  const nextPreferences = {
+    ...config.tuiPreferences,
+    [fullName]: {
+      minClusterSize: params.minClusterSize,
+      sortMode: params.sortMode,
+    },
+  };
+  config.tuiPreferences = nextPreferences;
+  const next = fs.existsSync(config.configPath)
+    ? ({
+        ...(JSON.parse(fs.readFileSync(config.configPath, 'utf8')) as PersistedGitcrawlConfig),
+        tuiPreferences: nextPreferences,
+      } satisfies PersistedGitcrawlConfig)
+    : ({
+        tuiPreferences: nextPreferences,
+      } satisfies PersistedGitcrawlConfig);
+  fs.mkdirSync(config.configDir, { recursive: true });
+  fs.writeFileSync(config.configPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  return { configPath: config.configPath };
+}
+
 export function requireGithubToken(config: GitcrawlConfig): string {
   if (!config.githubToken) {
+    if (config.secretProvider === 'op' && config.opVaultName && config.opItemName) {
+      throw new Error(
+        `Missing GitHub token in the environment. This config is set to use 1Password CLI via ${config.opVaultName}/${config.opItemName}; run gitcrawl through your op wrapper or set GITHUB_TOKEN. Expected config at ${config.configPath}`,
+      );
+    }
     throw new Error(`Missing GitHub token. Run gitcrawl init or set GITHUB_TOKEN. Expected config at ${config.configPath}`);
   }
   return config.githubToken;
@@ -301,6 +394,11 @@ export function requireGithubToken(config: GitcrawlConfig): string {
 
 export function requireOpenAiKey(config: GitcrawlConfig): string {
   if (!config.openaiApiKey) {
+    if (config.secretProvider === 'op' && config.opVaultName && config.opItemName) {
+      throw new Error(
+        `Missing OpenAI API key in the environment. This config is set to use 1Password CLI via ${config.opVaultName}/${config.opItemName}; run gitcrawl through your op wrapper or set OPENAI_API_KEY. Expected config at ${config.configPath}`,
+      );
+    }
     throw new Error(`Missing OpenAI API key. Run gitcrawl init or set OPENAI_API_KEY. Expected config at ${config.configPath}`);
   }
   return config.openaiApiKey;
