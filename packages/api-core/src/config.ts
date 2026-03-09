@@ -155,6 +155,11 @@ function resolveConfiguredPath(configDir: string, value: string): string {
   return path.isAbsolute(value) ? value : path.resolve(configDir, value);
 }
 
+function getLegacyWorkspaceDbPath(workspaceRoot: string): string | null {
+  const legacyPath = path.join(workspaceRoot, 'data', 'gitcrawl.db');
+  return fs.existsSync(legacyPath) ? legacyPath : null;
+}
+
 function parseIntegerSetting(name: string, raw: string): number {
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
@@ -188,12 +193,16 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     { source: 'config', value: stored.data.openaiApiKey },
     { source: 'dotenv', value: getString(dotenvValues.OPENAI_API_KEY) },
   );
-  const dbPathValue = pickDefined<string>(
+  const configuredDbPath = pickDefined<string>(
     { source: 'env', value: getString(env.GITCRAWL_DB_PATH) },
     { source: 'config', value: stored.data.dbPath },
     { source: 'dotenv', value: getString(dotenvValues.GITCRAWL_DB_PATH) },
-    { source: 'default', value: 'gitcrawl.db' },
   );
+  const legacyWorkspaceDbPath = configuredDbPath.value === undefined ? getLegacyWorkspaceDbPath(workspaceRoot) : null;
+  const dbPathValue =
+    legacyWorkspaceDbPath !== null
+      ? { source: 'default' as const, value: legacyWorkspaceDbPath }
+      : pickDefined<string>(configuredDbPath, { source: 'default', value: 'gitcrawl.db' });
   const apiPortValue = pickDefined<string | number>(
     { source: 'env', value: getString(env.GITCRAWL_API_PORT) },
     { source: 'config', value: stored.data.apiPort },
@@ -242,7 +251,10 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     { source: 'default', value: 'gitcrawl-threads' },
   );
 
-  const dbPath = resolveConfiguredPath(stored.configDir, dbPathValue.value ?? 'gitcrawl.db');
+  const dbPath =
+    dbPathValue.value && path.isAbsolute(dbPathValue.value)
+      ? dbPathValue.value
+      : resolveConfiguredPath(stored.configDir, dbPathValue.value ?? 'gitcrawl.db');
   const apiPort = parseIntegerSetting('GITCRAWL_API_PORT', String(apiPortValue.value ?? '5179'));
   const embedBatchSize = parseIntegerSetting('GITCRAWL_EMBED_BATCH_SIZE', String(embedBatchSizeValue.value ?? '8'));
   const embedConcurrency = parseIntegerSetting('GITCRAWL_EMBED_CONCURRENCY', String(embedConcurrencyValue.value ?? '10'));

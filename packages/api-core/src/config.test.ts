@@ -19,6 +19,8 @@ function makeTempHome(): string {
 
 test('loadConfig prefers persisted config and stores defaults under the user config directory', () => {
   const home = makeTempHome();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-workspace-'));
+  fs.writeFileSync(path.join(workspace, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
   const env = {
     ...process.env,
     HOME: home,
@@ -34,7 +36,7 @@ test('loadConfig prefers persisted config and stores defaults under the user con
     { env },
   );
 
-  const config = loadConfig({ cwd: process.cwd(), env });
+  const config = loadConfig({ cwd: workspace, env });
   assert.equal(config.configPath, path.join(home, '.config', 'gitcrawl', 'config.json'));
   assert.equal(config.configFileExists, true);
   assert.equal(config.apiPort, 6123);
@@ -87,6 +89,23 @@ test('loadConfig falls back to repo .env.local when no persisted config exists',
   assert.equal(config.githubTokenSource, 'dotenv');
   assert.equal(config.openaiApiKeySource, 'dotenv');
   assert.equal(config.apiPort, 6111);
+});
+
+test('loadConfig reuses an existing legacy workspace database when no explicit db path is configured', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-workspace-'));
+  fs.writeFileSync(path.join(workspace, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
+  fs.mkdirSync(path.join(workspace, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, 'data', 'gitcrawl.db'), '');
+
+  const config = loadConfig({
+    cwd: workspace,
+    env: {
+      ...process.env,
+      HOME: makeTempHome(),
+    },
+  });
+
+  assert.equal(config.dbPath, path.join(workspace, 'data', 'gitcrawl.db'));
 });
 
 test('writePersistedConfig creates a readable config file', () => {
