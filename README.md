@@ -65,14 +65,9 @@ This repo now ships an installable skill at [skills/gitcrawl/SKILL.md](./skills/
 
 It is meant for Codex Desktop / Codex CLI style skill installs and follows the same `SKILL.md` + `agents/openai.yaml` layout used by Vercel-style skill repos.
 
-To install it locally for Codex Desktop, copy this folder into your skills directory:
+For installation and usage conventions, point users at [vercel-labs/skills](https://github.com/vercel-labs/skills).
 
-```bash
-mkdir -p ~/.codex/skills
-cp -R ./skills/gitcrawl ~/.codex/skills/gitcrawl
-```
-
-If you use the older agents layout instead, copy it to `~/.agents/skills/gitcrawl`.
+This repo provides the skill payload under `skills/gitcrawl/`; users should install it using the workflow/tooling described in the Vercel skills repo rather than manual copy instructions here.
 
 The skill is built around the stable JSON CLI surface:
 
