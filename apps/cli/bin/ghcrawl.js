@@ -18,7 +18,7 @@ if (existsSync(distEntrypoint)) {
   const sourceEntrypoint = path.join(binDir, '..', 'src', 'main.ts');
   const require = createRequire(import.meta.url);
   const tsxLoader = require.resolve('tsx');
-  const child = spawn(process.execPath, ['--import', tsxLoader, sourceEntrypoint, ...process.argv.slice(2)], {
+  const child = spawn(process.execPath, ['--conditions=development', '--import', tsxLoader, sourceEntrypoint, ...process.argv.slice(2)], {
     stdio: 'inherit',
     env: process.env,
   });
