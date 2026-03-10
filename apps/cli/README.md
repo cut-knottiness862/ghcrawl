@@ -164,9 +164,9 @@ Use `author --login ...` when you want all currently open issue/PR records from 
 
 ## Cost To Operate
 
-The main variable cost is OpenAI embeddings. Current model pricing is published by OpenAI here: [OpenAI API pricing](https://developers.openai.com/api/docs/pricing).
+The main variable cost is OpenAI embeddings. Current model pricing is published by OpenAI here: [OpenAI API pricing](https://developers.openai.com/api/docs/pricing#embeddings).
 
-On a real local run against roughly `12k` issues plus about `1.2x` related PR and issue inputs, [`text-embedding-3-large`](https://developers.openai.com/api/docs/pricing) came out to about **$0.65 USD** total to embed the repo. Treat that as an approximate data point for something like `~14k` issue and PR inputs, not a hard guarantee.
+On a real local run against roughly `12k` issues plus about `1.2x` related PR and issue inputs, [`text-embedding-3-large`](https://developers.openai.com/api/docs/pricing#embeddings) came out to about **$0.65 USD** total to embed the repo. Treat that as an approximate data point for something like `~14k` issue and PR inputs, not a hard guarantee.
 
 This screenshot is the reference point for that estimate:
 
