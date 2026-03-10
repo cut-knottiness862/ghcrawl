@@ -653,6 +653,33 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     });
   };
 
+  const withLoadingOverlay = async <T>(message: string, task: () => T | Promise<T>): Promise<T> => {
+    const box = blessed.box({
+      parent: widgets.screen,
+      border: 'line',
+      label: ' Loading ',
+      width: '56%',
+      height: 7,
+      top: 'center',
+      left: 'center',
+      tags: true,
+      content: `${message}\n\nThis can take a few seconds on large repos.`,
+      style: {
+        border: { fg: '#5bc0eb' },
+        fg: 'white',
+        bg: '#101522',
+      },
+    });
+    widgets.screen.render();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    try {
+      return await task();
+    } finally {
+      box.destroy();
+      widgets.screen.render();
+    }
+  };
+
   const switchRepository = (
     target: RepositoryTarget,
     overrides?: Partial<{
@@ -734,7 +761,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         }
 
         if (choice.kind === 'existing') {
-          switchRepository(choice.target);
+          await withLoadingOverlay(`Opening ${choice.target.owner}/${choice.target.repo}...`, async () => {
+            switchRepository(choice.target);
+          });
           pushActivity(`[repo] switched to ${choice.target.owner}/${choice.target.repo}`);
           updateFocus('clusters');
           return;
@@ -766,7 +795,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       }
 
       if (choice.kind === 'existing') {
-        switchRepository(choice.target);
+        await withLoadingOverlay(`Opening ${choice.target.owner}/${choice.target.repo}...`, async () => {
+          switchRepository(choice.target);
+        });
         pushActivity(`[repo] opened ${choice.target.owner}/${choice.target.repo}`);
         updateFocus('clusters');
         return true;
