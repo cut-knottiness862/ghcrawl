@@ -194,7 +194,7 @@ ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent
 ghcrawl cluster-detail owner/repo --id 123 --member-limit 20 --body-chars 280
 ```
 
-Video walkthrough:
+### Video Walkthrough
 
 [![ghcrawl skill walkthrough](https://img.youtube.com/vi/xqgDcy3WDUI/hqdefault.jpg)](https://www.youtube.com/watch?v=xqgDcy3WDUI)
 
