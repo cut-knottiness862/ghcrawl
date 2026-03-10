@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -40,6 +41,7 @@ jobs:
         run: pnpm pack:smoke
 
       - name: Configure npm authentication
+        if: ${{ env.NODE_AUTH_TOKEN != '' }}
         run: |
           cat <<'EOF' > ~/.npmrc
           //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
