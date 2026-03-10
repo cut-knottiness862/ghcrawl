@@ -91,16 +91,14 @@ const FOOTER_LOG_LINES = 4;
 const UPDATE_TASK_ORDER: Array<keyof UpdateTaskSelection> = ['sync', 'embed', 'cluster'];
 
 export async function startTui(params: StartTuiParams): Promise<void> {
-  const selectedRepository =
-    params.owner && params.repo ? { owner: params.owner, repo: params.repo } : await pickRepository(params.service);
-  if (!selectedRepository) {
-    return;
-  }
-  let currentRepository = selectedRepository;
+  const selectedRepository = params.owner && params.repo ? { owner: params.owner, repo: params.repo } : null;
+  let currentRepository = selectedRepository ?? { owner: '', repo: '' };
   const widgets = createWidgets(currentRepository.owner, currentRepository.repo);
 
   let focusPane: TuiFocusPane = 'clusters';
-  const initialPreference = getTuiRepositoryPreference(params.service.config, currentRepository.owner, currentRepository.repo);
+  const initialPreference = selectedRepository
+    ? getTuiRepositoryPreference(params.service.config, currentRepository.owner, currentRepository.repo)
+    : { sortMode: 'recent' as TuiClusterSortMode, minClusterSize: 10 as TuiMinSizeFilter };
   let sortMode: TuiClusterSortMode = initialPreference.sortMode;
   let minSize: TuiMinSizeFilter = initialPreference.minClusterSize;
   let search = '';
@@ -220,8 +218,8 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     applyRect(widgets.detail, layout.detail);
     applyRect(widgets.footer, layout.footer);
 
-    widgets.screen.title = `gitcrawl ${currentRepository.owner}/${currentRepository.repo}`;
-    const repoLabel = snapshot?.repository.fullName ?? `${currentRepository.owner}/${currentRepository.repo}`;
+    widgets.screen.title = currentRepository.owner && currentRepository.repo ? `gitcrawl ${currentRepository.owner}/${currentRepository.repo}` : 'gitcrawl';
+    const repoLabel = snapshot?.repository.fullName ?? (currentRepository.owner && currentRepository.repo ? `${currentRepository.owner}/${currentRepository.repo}` : 'gitcrawl');
     const ghStatus = formatRelativeTime(snapshot?.stats.lastGithubReconciliationAt ?? null);
     const embedAge = formatRelativeTime(snapshot?.stats.lastEmbedRefreshAt ?? null);
     const embedStatus =
@@ -236,11 +234,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       `{bold}${repoLabel}{/bold}  {cyan-fg}${snapshot?.stats.openPullRequestCount ?? 0} PR{/cyan-fg}  {green-fg}${snapshot?.stats.openIssueCount ?? 0} issues{/green-fg}  GH:${ghStatus}  Emb:${embedStatus}  Cl:${clusterStatus}  sort:${sortMode}  min:${minSize === 0 ? 'all' : `${minSize}+`}  filter:${search || 'none'}`,
     );
 
-    const clusterItems =
-      snapshot?.clusters.map((cluster) => {
-        const updated = cluster.latestUpdatedAt ? cluster.latestUpdatedAt.slice(5, 16).replace('T', ' ') : 'unknown';
-        return `${String(cluster.totalCount).padStart(3, ' ')}  ${String(cluster.pullRequestCount).padStart(2, ' ')}P/${String(cluster.issueCount).padStart(2, ' ')}I  ${updated}  ${cluster.displayTitle}`;
-      }) ?? ['No clusters'];
+    const clusterItems = snapshot
+      ? snapshot.clusters.map((cluster) => {
+          const updated = cluster.latestUpdatedAt ? cluster.latestUpdatedAt.slice(5, 16).replace('T', ' ') : 'unknown';
+          return `${String(cluster.totalCount).padStart(3, ' ')}  ${String(cluster.pullRequestCount).padStart(2, ' ')}P/${String(cluster.issueCount).padStart(2, ' ')}I  ${updated}  ${cluster.displayTitle}`;
+        })
+      : ['Pick a repository with p'];
     widgets.clusters.setItems(clusterItems);
     const clusterIndex =
       snapshot && selectedClusterId !== null ? Math.max(0, snapshot.clusters.findIndex((cluster) => cluster.clusterId === selectedClusterId)) : 0;
@@ -582,6 +581,40 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     })();
   };
 
+  const initializeRepositorySelection = async (): Promise<boolean> => {
+    if (selectedRepository) {
+      return true;
+    }
+
+    modalOpen = true;
+    try {
+      const choice = await promptRepositoryChoice(widgets.screen, params.service);
+      if (!choice) {
+        return false;
+      }
+
+      if (choice.kind === 'existing') {
+        switchRepository(choice.target);
+        pushActivity(`[repo] opened ${choice.target.owner}/${choice.target.repo}`);
+        updateFocus('clusters');
+        return true;
+      }
+
+      const target = await promptRepositoryInput(widgets.screen);
+      if (!target) {
+        return false;
+      }
+      const ready = await runRepositoryBootstrap(target);
+      if (!ready) {
+        return false;
+      }
+      updateFocus('clusters');
+      return true;
+    } finally {
+      modalOpen = false;
+    }
+  };
+
   widgets.screen.key(['q', 'C-c'], () => {
     widgets.screen.destroy();
   });
@@ -680,7 +713,17 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   });
 
   widgets.screen.program.hideCursor();
-  refreshAll(false);
+  if (selectedRepository) {
+    refreshAll(false);
+  } else {
+    status = 'Pick a repository';
+    render();
+    const ready = await initializeRepositorySelection();
+    if (!ready) {
+      widgets.screen.destroy();
+      return;
+    }
+  }
   pushActivity('[jobs] press g to run the staged update pipeline: GitHub sync, embeddings, then clusters');
   updateFocus('clusters');
 
@@ -693,7 +736,7 @@ function createWidgets(owner: string, repo: string): Widgets {
     fullUnicode: true,
     dockBorders: true,
     autoPadding: false,
-    title: `gitcrawl ${owner}/${repo}`,
+    title: owner && repo ? `gitcrawl ${owner}/${repo}` : 'gitcrawl',
   });
   const header = blessed.box({
     parent: screen,
@@ -951,206 +994,6 @@ async function promptUpdatePipelineSelection(
 
     screen.on('keypress', handleKeypress);
     box.on('select', () => finish({ ...selection }));
-  });
-}
-
-async function pickRepository(service: GitcrawlService): Promise<{ owner: string; repo: string } | null> {
-  const repositories = getRepositoryChoices(service);
-
-  if (!repositories.some((choice) => choice.kind === 'existing')) {
-    return await runColdStartOnboarding(service);
-  }
-
-  const screen = createScreen({
-    smartCSR: true,
-    fullUnicode: true,
-    dockBorders: true,
-    autoPadding: false,
-    title: 'gitcrawl repository picker',
-  });
-  const box = blessed.list({
-    parent: screen,
-    border: 'line',
-    label: ' Repositories ',
-    keys: true,
-    vi: true,
-    mouse: false,
-    top: 'center',
-    left: 'center',
-    width: '70%',
-    height: '70%',
-    style: {
-      border: { fg: '#5bc0eb' },
-      item: { fg: 'white' },
-      selected: { bg: '#5bc0eb', fg: 'black', bold: true },
-    },
-    items: repositories.map((choice) => choice.label),
-  });
-  const help = blessed.box({
-    parent: screen,
-    bottom: 0,
-    left: 0,
-    width: '100%',
-    height: 1,
-    content: 'Select a repository with Enter. Press n to sync a new repo. Use j/k or arrows to move. Press q to quit.',
-    style: { fg: 'black', bg: '#5bc0eb' },
-  });
-
-  box.focus();
-  box.select(0);
-  screen.render();
-
-  return await new Promise<{ owner: string; repo: string } | null>((resolve) => {
-    const finish = (value: { owner: string; repo: string } | null): void => {
-      screen.destroy();
-      resolve(value);
-    };
-
-    screen.key(['q', 'C-c', 'escape'], () => finish(null));
-    screen.key(['n'], () => {
-      const newIndex = repositories.findIndex((choice) => choice.kind === 'new');
-      if (newIndex >= 0) {
-        box.select(newIndex);
-        screen.render();
-      }
-    });
-    box.on('select', (_item, index) => {
-      const selected = repositories[index];
-      if (!selected) {
-        finish(null);
-        return;
-      }
-      if (selected.kind === 'new') {
-        void (async () => {
-          const target = await promptRepositoryInput(screen);
-          if (!target) {
-            screen.render();
-            return;
-          }
-          const ready = await runColdStartSetup(service, screen, target);
-          if (ready) {
-            finish(target);
-          }
-        })();
-        return;
-      }
-      finish(selected.target);
-    });
-  });
-}
-
-async function runColdStartOnboarding(service: GitcrawlService): Promise<{ owner: string; repo: string } | null> {
-  const screen = createScreen({
-    smartCSR: true,
-    fullUnicode: true,
-    dockBorders: true,
-    autoPadding: false,
-    title: 'gitcrawl onboarding',
-  });
-
-  const info = blessed.box({
-    parent: screen,
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: 6,
-    tags: true,
-    content: '{bold}No local repositories yet.{/bold}\n\nEnter an {bold}owner/repo{/bold} target and gitcrawl can run an initial sync, embed, and cluster pass for you.',
-    style: { fg: 'white', bg: '#0d1321' },
-  });
-  const log = blessed.log({
-    parent: screen,
-    top: 6,
-    left: 0,
-    width: '100%',
-    bottom: 1,
-    border: 'line',
-    label: ' Setup ',
-    tags: false,
-    scrollable: true,
-    alwaysScroll: true,
-    scrollbar: { ch: ' ' },
-    style: {
-      border: { fg: '#5bc0eb' },
-      fg: 'white',
-    },
-  });
-  const footer = blessed.box({
-    parent: screen,
-    bottom: 0,
-    left: 0,
-    width: '100%',
-    height: 1,
-    content: 'Enter owner/repo to begin. Press q to quit.',
-    style: { fg: 'black', bg: '#5bc0eb' },
-  });
-
-  screen.render();
-
-  return await new Promise<{ owner: string; repo: string } | null>((resolve) => {
-    const finish = (value: { owner: string; repo: string } | null): void => {
-      screen.destroy();
-      resolve(value);
-    };
-
-    screen.key(['q', 'C-c', 'escape'], () => finish(null));
-
-    const prompt = blessed.prompt({
-      parent: screen,
-      border: 'line',
-      height: 7,
-      width: '60%',
-      top: 'center',
-      left: 'center',
-      label: ' Initial Repository ',
-      tags: true,
-      keys: true,
-      vi: true,
-      style: {
-        border: { fg: 'cyan' },
-        bg: '#101522',
-      },
-    });
-
-    const askForRepository = (): void => {
-      prompt.input('Repository to sync (owner/repo)', '', async (_error, value) => {
-        const trimmed = (value ?? '').trim();
-        if (!trimmed) {
-          finish(null);
-          return;
-        }
-        const parsed = parseOwnerRepoValue(trimmed);
-        if (!parsed) {
-          log.log(`[setup] invalid repository target: ${trimmed}`);
-          footer.setContent('Use owner/repo format. Press q to quit.');
-          screen.render();
-          prompt.destroy();
-          askForRepository();
-          return;
-        }
-
-        prompt.destroy();
-        const ready = await runColdStartSetup(service, screen, parsed, log, footer);
-        if (ready) {
-          finish(parsed);
-          return;
-        }
-
-        footer.setContent('Initial setup failed. Press q to quit or Enter to try another repo.');
-        screen.render();
-        const retry = (): void => {
-          screen.off('keypress', handleRetry);
-          askForRepository();
-        };
-        const handleRetry = (_char: string, key: blessed.Widgets.Events.IKeyEventArg): void => {
-          if (key.name !== 'enter') return;
-          retry();
-        };
-        screen.on('keypress', handleRetry);
-      });
-    };
-
-    askForRepository();
   });
 }
 
