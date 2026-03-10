@@ -216,6 +216,7 @@ export type TuiThreadDetail = {
 export type TuiSnapshot = {
   repository: RepositoryDto;
   stats: TuiRepoStats;
+  clusterRunId: number | null;
   clusters: TuiClusterSummary[];
 };
 
@@ -1496,6 +1497,7 @@ export class GHCrawlService {
       owner: params.owner,
       repo: params.repo,
       clusterId: params.clusterId,
+      clusterRunId: snapshot.clusterRunId ?? undefined,
     });
     const members = detail.members.slice(0, params.memberLimit ?? detail.members.length).map((member) => {
       const threadDetail = this.getTuiThreadDetail({
@@ -1547,7 +1549,7 @@ export class GHCrawlService {
     const stats = this.getTuiRepoStats(repository.id);
     const latestRun = this.getLatestClusterRun(repository.id);
     if (!latestRun) {
-      return { repository, stats, clusters: [] };
+      return { repository, stats, clusterRunId: null, clusters: [] };
     }
 
     const includeClosedClusters = params.includeClosedClusters ?? true;
@@ -1564,18 +1566,21 @@ export class GHCrawlService {
     return {
       repository,
       stats,
+      clusterRunId: latestRun.id,
       clusters,
     };
   }
 
-  getTuiClusterDetail(params: { owner: string; repo: string; clusterId: number }): TuiClusterDetail {
+  getTuiClusterDetail(params: { owner: string; repo: string; clusterId: number; clusterRunId?: number }): TuiClusterDetail {
     const repository = this.requireRepository(params.owner, params.repo);
-    const latestRun = this.getLatestClusterRun(repository.id);
-    if (!latestRun) {
+    const clusterRunId =
+      params.clusterRunId ??
+      (this.getLatestClusterRun(repository.id)?.id ?? null);
+    if (!clusterRunId) {
       throw new Error(`No completed cluster run found for ${repository.fullName}. Run cluster first.`);
     }
 
-    const summary = this.getRawTuiClusterSummary(repository.id, latestRun.id, params.clusterId);
+    const summary = this.getRawTuiClusterSummary(repository.id, clusterRunId, params.clusterId);
     if (!summary) {
       throw new Error(`Cluster ${params.clusterId} was not found for ${repository.fullName}.`);
     }

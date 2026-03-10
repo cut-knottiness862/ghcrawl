@@ -167,6 +167,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       owner: currentRepository.owner,
       repo: currentRepository.repo,
       clusterId,
+      clusterRunId: snapshot?.clusterRunId ?? undefined,
     });
     clusterDetailCache.set(clusterId, detail);
     return detail;
@@ -205,7 +206,13 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         return false;
       }
       selectedClusterId = cluster.clusterId;
-      clusterDetail = loadClusterDetail(cluster.clusterId);
+      try {
+        clusterDetail = loadClusterDetail(cluster.clusterId);
+      } catch (error) {
+        status = `Cluster ${cluster.clusterId} changed; refreshing view`;
+        refreshAll(true);
+        return false;
+      }
       memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed });
       selectedMemberThreadId = threadId;
       memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
@@ -248,7 +255,24 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     rebuildClusterItems();
 
     if (selectedClusterId !== null) {
-      clusterDetail = loadClusterDetail(selectedClusterId);
+      try {
+        clusterDetail = loadClusterDetail(selectedClusterId);
+      } catch {
+        snapshot = params.service.getTuiSnapshot({
+          owner: currentRepository.owner,
+          repo: currentRepository.repo,
+          minSize,
+          sort: sortMode,
+          search,
+          includeClosedClusters: showClosed,
+        });
+        rebuildClusterItems();
+        selectedClusterId = preserveSelectedId(snapshot.clusters.map((cluster) => cluster.clusterId), null);
+        clusterDetail = selectedClusterId !== null ? loadClusterDetail(selectedClusterId) : null;
+      }
+    }
+
+    if (selectedClusterId !== null && clusterDetail) {
       memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed });
       selectedMemberThreadId = preserveSelectedId(
         memberRows.filter((row) => row.selectable).map((row) => row.threadId),
@@ -432,7 +456,13 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       }
       selectedClusterId = snapshot.clusters[nextIndex]?.clusterId ?? null;
       if (selectedClusterId !== null) {
-        clusterDetail = loadClusterDetail(selectedClusterId);
+        try {
+          clusterDetail = loadClusterDetail(selectedClusterId);
+        } catch {
+          status = 'Cluster data changed; refreshing view';
+          refreshAll(true);
+          return;
+        }
         memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed });
         selectedMemberThreadId = preserveSelectedId(
           memberRows.filter((row) => row.selectable).map((row) => row.threadId),
