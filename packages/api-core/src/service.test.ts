@@ -1984,8 +1984,17 @@ test('syncRepository performs direct stale-open reconciliation when fullReconcil
   });
 
   try {
-    await service.syncRepository({ owner: 'openclaw', repo: 'openclaw' });
-    const result = await service.syncRepository({ owner: 'openclaw', repo: 'openclaw', fullReconcile: true });
+    await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      startedAt: '2026-03-09T13:13:00.000Z',
+    });
+    const result = await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      fullReconcile: true,
+      startedAt: '2026-03-09T14:13:01.000Z',
+    });
     const after = service.db
       .prepare("select state from threads where number = 42 and kind = 'issue'")
       .get() as { state: string };
@@ -2093,6 +2102,141 @@ test('syncRepository derives the default overlapping since window from the last 
     assert.ok(Date.parse(syncState.last_overlapping_open_scan_completed_at) >= Date.parse('2026-03-09T14:13:01.000Z'));
     assert.equal(syncState.last_non_overlapping_scan_completed_at, null);
     assert.equal(syncState.last_open_close_reconciled_at, syncState.last_overlapping_open_scan_completed_at);
+  } finally {
+    service.close();
+  }
+});
+
+test('syncRepository uses an explicit since window for both open and closed overlap scans', async () => {
+  const openSinceValues: Array<string | undefined> = [];
+  const closedSinceValues: Array<string | undefined> = [];
+  let openListCalls = 0;
+
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async (_owner, _repo, since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        closedSinceValues.push(since);
+        return [];
+      }
+      openSinceValues.push(since);
+      openListCalls += 1;
+      return openListCalls === 1
+        ? [
+            {
+              id: 100,
+              number: 42,
+              state: 'open',
+              title: 'Downloader hangs',
+              body: 'The transfer never finishes.',
+              html_url: 'https://github.com/openclaw/openclaw/issues/42',
+              labels: [{ name: 'bug' }],
+              assignees: [],
+              user: { login: 'alice', type: 'User' },
+              updated_at: '2026-03-09T00:00:00Z',
+            },
+          ]
+        : [];
+    },
+    getIssue: async (_owner, _repo, number) => ({
+      id: 100,
+      number,
+      state: 'open',
+      title: 'Downloader hangs',
+      body: 'The transfer never finishes.',
+      html_url: `https://github.com/openclaw/openclaw/issues/${number}`,
+      labels: [{ name: 'bug' }],
+      assignees: [],
+      user: { login: 'alice', type: 'User' },
+      updated_at: '2026-03-09T00:00:00Z',
+    }),
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      startedAt: '2026-03-09T13:13:00.000Z',
+    });
+
+    await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      since: '2026-03-09T10:00:00.000Z',
+      startedAt: '2026-03-09T14:13:01.000Z',
+    });
+
+    assert.deepEqual(openSinceValues, [undefined, '2026-03-09T10:00:00.000Z']);
+    assert.deepEqual(closedSinceValues, ['2026-03-09T10:00:00.000Z']);
+  } finally {
+    service.close();
+  }
+});
+
+test('syncRepository skips the closed overlap sweep on the first full scan with no overlap cursor', async () => {
+  const openSinceValues: Array<string | undefined> = [];
+  const closedSinceValues: Array<string | undefined> = [];
+
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async (_owner, _repo, since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        closedSinceValues.push(since);
+        return [];
+      }
+      openSinceValues.push(since);
+      return [
+        {
+          id: 100,
+          number: 42,
+          state: 'open',
+          title: 'Downloader hangs',
+          body: 'The transfer never finishes.',
+          html_url: 'https://github.com/openclaw/openclaw/issues/42',
+          labels: [{ name: 'bug' }],
+          assignees: [],
+          user: { login: 'alice', type: 'User' },
+          updated_at: '2026-03-09T00:00:00Z',
+        },
+      ];
+    },
+    getIssue: async (_owner, _repo, number) => ({
+      id: 100,
+      number,
+      state: 'open',
+      title: 'Downloader hangs',
+      body: 'The transfer never finishes.',
+      html_url: `https://github.com/openclaw/openclaw/issues/${number}`,
+      labels: [{ name: 'bug' }],
+      assignees: [],
+      user: { login: 'alice', type: 'User' },
+      updated_at: '2026-03-09T00:00:00Z',
+    }),
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      startedAt: '2026-03-09T13:13:00.000Z',
+    });
+
+    assert.deepEqual(openSinceValues, [undefined]);
+    assert.deepEqual(closedSinceValues, []);
   } finally {
     service.close();
   }
