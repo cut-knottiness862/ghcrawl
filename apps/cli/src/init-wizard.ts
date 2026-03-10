@@ -49,9 +49,26 @@ export function createClackInitPrompter(): InitPrompter {
     intro,
     note,
     select,
-    text,
+    text: async (options) => {
+      const validate = options.validate;
+      return text({
+        message: options.message,
+        placeholder: options.placeholder,
+        validate: validate
+          ? (value) => validate(value ?? '')
+          : undefined,
+      });
+    },
     confirm,
-    password,
+    password: async (options) => {
+      const validate = options.validate;
+      return password({
+        message: options.message,
+        validate: validate
+          ? (value) => validate(value ?? '')
+          : undefined,
+      });
+    },
     outro,
     cancel,
   };
