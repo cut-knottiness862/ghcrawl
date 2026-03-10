@@ -2,6 +2,8 @@
 
 `gitcrawl` is a local-first GitHub issue and pull request crawler for maintainers.
 
+![gitcrawl TUI demo](./docs/images/gitcrawl-tui-demo.gif)
+
 Current status:
 
 - `pnpm` monorepo scaffold is in place
