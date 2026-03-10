@@ -1930,9 +1930,10 @@ test('syncRepository derives the default overlapping since window from the last 
     assert.equal(secondStats.isOverlappingOpenScan, true);
     assert.equal(secondStats.effectiveSince, '2026-03-09T12:13:01.000Z');
     assert.equal(syncState.last_full_open_scan_started_at, '2026-03-09T13:13:00.000Z');
-    assert.match(syncState.last_overlapping_open_scan_completed_at ?? '', /^2026-03-09T/);
+    assert.ok(syncState.last_overlapping_open_scan_completed_at);
+    assert.ok(Date.parse(syncState.last_overlapping_open_scan_completed_at) >= Date.parse('2026-03-09T14:13:01.000Z'));
     assert.equal(syncState.last_non_overlapping_scan_completed_at, null);
-    assert.match(syncState.last_open_close_reconciled_at ?? '', /^2026-03-09T/);
+    assert.equal(syncState.last_open_close_reconciled_at, syncState.last_overlapping_open_scan_completed_at);
   } finally {
     service.close();
   }
