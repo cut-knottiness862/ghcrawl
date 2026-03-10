@@ -40,7 +40,7 @@ Current priorities:
 - product/design: [docs/DESIGN.md](./docs/DESIGN.md)
 - implementation status and next phases: [docs/PLAN.md](./docs/PLAN.md)
 - operator overview: [README.md](./README.md)
-- local usage walkthrough: [GETTING-STARTED.md](./GETTING-STARTED.md)
+- maintainer workflow and release notes: [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## Code Areas
 
@@ -67,6 +67,7 @@ Examples:
 - `docs: update getting started sync examples`
 - `refactor: split comment hydration from default sync`
 - `test: cover filtered sync reconciliation rules`
+- `docs: rewrite README for installed CLI users`
 
 ## Verification Expectations
 
