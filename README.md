@@ -80,6 +80,10 @@ ghcrawl refresh owner/repo
 | ![Closed cluster members grayed out](./docs/images/ghcrawl-tui-closed-members.png) | ![Completely closed cluster grayed out](./docs/images/ghcrawl-tui-closed-cluster.png) |
 | Closed members stay visible in gray so overlap is still easy to inspect. | A cluster with no open members is grayed out as a whole until you hide closed items. |
 
+![Stacked TUI layout](./docs/images/ghcrawl-tui-layout-stacked.png)
+
+Press `l` on wide screens to toggle the stacked layout with the cluster list on the left and members/detail stacked on the right.
+
 ## Controlling The Refresh Flow More Intentionally
 
 Most users should run `ghcrawl refresh owner/repo` and let it do the full pipeline in the right order.
