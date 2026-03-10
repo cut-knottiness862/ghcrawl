@@ -10,6 +10,7 @@ import {
   getRepositoryChoices,
   parseOwnerRepoValue,
   renderDetailPane,
+  resolveBlessedTerminal,
 } from './app.js';
 
 test('escapeBlessedText escapes blessed tag delimiters', () => {
@@ -69,6 +70,11 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
 test('parseOwnerRepoValue accepts owner slash repo values and rejects invalid ones', () => {
   assert.deepEqual(parseOwnerRepoValue('openclaw/openclaw'), { owner: 'openclaw', repo: 'openclaw' });
   assert.equal(parseOwnerRepoValue('openclaw'), null);
+});
+
+test('resolveBlessedTerminal normalizes ghostty to xterm-256color', () => {
+  assert.equal(resolveBlessedTerminal({ TERM: 'xterm-ghostty' } as NodeJS.ProcessEnv), 'xterm-256color');
+  assert.equal(resolveBlessedTerminal({ TERM: 'xterm-256color' } as NodeJS.ProcessEnv), 'xterm-256color');
 });
 
 test('getRepositoryChoices sorts by most recent update and includes the new-repo action', () => {

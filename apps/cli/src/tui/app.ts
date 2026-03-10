@@ -68,6 +68,24 @@ type UpdateTaskSelection = {
   cluster: boolean;
 };
 
+export function resolveBlessedTerminal(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const term = env.TERM;
+  if (!term) {
+    return undefined;
+  }
+  if (term === 'xterm-ghostty') {
+    return 'xterm-256color';
+  }
+  return term;
+}
+
+function createScreen(options: Parameters<typeof blessed.screen>[0]): blessed.Widgets.Screen {
+  return blessed.screen({
+    ...options,
+    terminal: resolveBlessedTerminal(),
+  });
+}
+
 const ACTIVITY_LOG_LIMIT = 200;
 const FOOTER_LOG_LINES = 4;
 const UPDATE_TASK_ORDER: Array<keyof UpdateTaskSelection> = ['sync', 'embed', 'cluster'];
@@ -670,7 +688,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 }
 
 function createWidgets(owner: string, repo: string): Widgets {
-  const screen = blessed.screen({
+  const screen = createScreen({
     smartCSR: true,
     fullUnicode: true,
     dockBorders: true,
@@ -943,7 +961,7 @@ async function pickRepository(service: GitcrawlService): Promise<{ owner: string
     return await runColdStartOnboarding(service);
   }
 
-  const screen = blessed.screen({
+  const screen = createScreen({
     smartCSR: true,
     fullUnicode: true,
     dockBorders: true,
@@ -1022,7 +1040,7 @@ async function pickRepository(service: GitcrawlService): Promise<{ owner: string
 }
 
 async function runColdStartOnboarding(service: GitcrawlService): Promise<{ owner: string; repo: string } | null> {
-  const screen = blessed.screen({
+  const screen = createScreen({
     smartCSR: true,
     fullUnicode: true,
     dockBorders: true,
