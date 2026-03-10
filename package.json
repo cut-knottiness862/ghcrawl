@@ -8,6 +8,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.29.3",
   "scripts": {
+    "build": "pnpm -r build",
     "cli": "pnpm --filter ghcrawl cli",
     "bootstrap": "pnpm --filter ghcrawl cli init",
     "doctor": "pnpm --filter ghcrawl cli doctor",
@@ -29,7 +30,7 @@
     "serve": "pnpm --filter ghcrawl cli serve",
     "pack:smoke": "node ./scripts/pack-smoke.mjs",
     "release:apply-version": "node ./scripts/apply-release-version.mjs",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm build && pnpm -r typecheck",
     "test": "pnpm -r test"
   },
   "pnpm": {

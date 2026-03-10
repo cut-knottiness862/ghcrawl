@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Deferred future Vite + shadcn/ui web app placeholder",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts"
   },

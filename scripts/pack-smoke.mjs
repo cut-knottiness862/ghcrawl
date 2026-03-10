@@ -47,6 +47,8 @@ try {
   );
 
   exec('npm', ['install', '--no-package-lock', ...tarballs], installDir);
+  exec('node', ['--input-type=module', '-e', "import('@ghcrawl/api-contract').then(()=>console.log('api-contract import ok'))"], installDir);
+  exec('node', ['--input-type=module', '-e', "import('@ghcrawl/api-core').then(()=>console.log('api-core import ok'))"], installDir);
   const cliManifest = packageManifests.find((manifest) => manifest.name === 'ghcrawl');
   if (!cliManifest || !cliManifest.bin || typeof cliManifest.bin.ghcrawl !== 'string') {
     throw new Error('Expected ghcrawl package with a ghcrawl bin');
