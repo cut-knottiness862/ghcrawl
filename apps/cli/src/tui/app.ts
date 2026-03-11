@@ -348,7 +348,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       footerLines.unshift('');
     }
     footerLines.push(
-      `${status}  |  jobs:${activeJobs}  |  h/? help  g update  p repos  u author  / filter  s sort  f min  l layout  x closed`,
+      `${status}  |  jobs:${activeJobs}  |  h/? help  # jump  g update  p repos  u author  / filter  s sort  f min  l layout  x closed`,
     );
     footerLines.push(
       `Tab focus  arrows move-or-scroll  PgUp/PgDn page  r refresh  o open  q quit`,
@@ -534,6 +534,55 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       prompt.destroy();
       modalOpen = false;
       updateFocus('clusters');
+    });
+  };
+
+  const promptThreadJump = (): void => {
+    if (modalOpen) return;
+    modalOpen = true;
+    const prompt = blessed.prompt({
+      parent: widgets.screen,
+      border: 'line',
+      height: 7,
+      width: '60%',
+      top: 'center',
+      left: 'center',
+      label: ' Jump To Issue/PR ',
+      tags: true,
+      keys: true,
+      vi: true,
+      style: {
+        border: { fg: '#fde74c' },
+        bg: '#101522',
+      },
+    });
+    prompt.input('Issue or PR number', '', (_error, value) => {
+      prompt.destroy();
+      modalOpen = false;
+      const parsed = Number((value ?? '').trim());
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        status = 'Enter a positive issue or PR number';
+        render();
+        return;
+      }
+      try {
+        const detail = params.service.getTuiThreadDetail({
+          owner: currentRepository.owner,
+          repo: currentRepository.repo,
+          threadNumber: parsed,
+          includeNeighbors: false,
+        });
+        const jumped = jumpToThread(detail.thread.id, detail.thread.clusterId ?? null);
+        if (jumped) {
+          status = `Jumped to #${detail.thread.number} in cluster ${detail.thread.clusterId ?? '?'}`;
+          updateFocus('members');
+          return;
+        }
+        render();
+      } catch (error) {
+        status = error instanceof Error ? error.message : `Thread #${parsed} was not found`;
+        render();
+      }
     });
   };
 
@@ -912,6 +961,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     if (modalOpen) return;
     promptFilter();
   });
+  widgets.screen.key(['#'], () => {
+    if (modalOpen) return;
+    promptThreadJump();
+  });
   widgets.screen.key(['h', '?'], () => {
     if (modalOpen) return;
     openHelp();
@@ -1172,6 +1225,7 @@ export function buildHelpContent(): string {
     'Home / End        jump to the top or bottom of detail or help',
     '',
     '{bold}Views And Filters{/bold}',
+    '#                 jump directly to an issue or PR number',
     's                 cycle cluster sort mode',
     'f                 cycle minimum cluster size filter',
     'l                 toggle wide layout: columns vs. wide-left stacked-right',

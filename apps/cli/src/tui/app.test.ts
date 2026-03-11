@@ -186,6 +186,7 @@ test('buildHelpContent includes the full key command list', () => {
   assert.match(content, /Tab \/ Shift-Tab/);
   assert.match(content, /Left \/ Right\s+cycle focus backward or forward across panes/);
   assert.match(content, /Up \/ Down\s+move selection, or scroll detail when detail is focused/);
+  assert.match(content, /#\s+jump directly to an issue or PR number/);
   assert.match(content, /g\s+open the staged update pipeline/);
   assert.match(content, /p\s+open the repository browser/);
   assert.match(content, /u\s+show all open threads for the selected author/);
