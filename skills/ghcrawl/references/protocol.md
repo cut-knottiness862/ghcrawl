@@ -24,6 +24,18 @@ Bulk read path for specific issue/PR numbers from the local DB.
 
 Use this when you need several specific thread records in one invoke instead of running one CLI call per number.
 
+For a single issue/PR number, this is also the direct JSON path to answer:
+
+- "which cluster is #12345 in?"
+
+The returned `thread` objects include:
+
+- `clusterId`
+
+If `clusterId` is non-null, follow with:
+
+- `ghcrawl cluster-detail owner/repo --id <clusterId>`
+
 Useful flags:
 
 - `--numbers 42,43,44`
@@ -155,6 +167,7 @@ If `ghcrawl` is not installed globally:
 
 ```bash
 pnpm --filter ghcrawl cli doctor --json
+pnpm --filter ghcrawl cli threads owner/repo --numbers 12345
 pnpm --filter ghcrawl cli threads owner/repo --numbers 42,43,44
 pnpm --filter ghcrawl cli threads owner/repo --numbers 42,43,44 --include-closed
 pnpm --filter ghcrawl cli author owner/repo --login lqquan

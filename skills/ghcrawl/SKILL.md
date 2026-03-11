@@ -46,6 +46,7 @@ Start with local read-only commands:
 Without explicit user direction to refresh data, prefer these local-only commands:
 
 ```bash
+ghcrawl threads owner/repo --numbers 12345
 ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent
 ghcrawl cluster-detail owner/repo --id 123 --member-limit 20 --body-chars 280
 ghcrawl threads owner/repo --numbers 42,43,44
@@ -62,6 +63,8 @@ By default:
 - `clusters` and `cluster-detail` hide locally closed clusters
 
 If the user explicitly wants to inspect those records, add `--include-closed`.
+
+Use `threads --numbers 12345` when you need to find the cluster for one specific issue/PR number. The returned thread record includes `clusterId`. If it is non-null, follow with `cluster-detail --id <clusterId>`.
 
 Use `threads --numbers ...` when you need a batch of specific issue/PR records. Do not pay the CLI startup cost 10 times for 10 separate single-thread lookups.
 
